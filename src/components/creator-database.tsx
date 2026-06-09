@@ -17,8 +17,9 @@ import { recordPayout, usePayouts } from '@/lib/payouts';
 import { badgeFor } from '@/lib/badges';
 import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
+import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, getVideoAnalysis, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
+import { detectPlatform, getVideoAnalysis, segTime, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -864,6 +865,7 @@ function CreatorDetail({
   const [resyncing, setResyncing] = useState(false);
   const [resyncMsg, setResyncMsg] = useState<string | null>(null);
   const [analyzeVid, setAnalyzeVid] = useState<VtVideo | null>(null);
+  const { map: analyses } = useVideoAnalyses();
 
   async function resync() {
     if (resyncing) return;
@@ -1033,7 +1035,7 @@ function CreatorDetail({
             No videos yet.
           </ThemedText>
         ) : (
-          topVideos.map((v) => <VideoTile key={v.id} video={v} onPress={() => setAnalyzeVid(v)} />)
+          topVideos.map((v) => <VideoTile key={v.id} video={v} state={analyses[v.id]} onPress={() => setAnalyzeVid(v)} />)
         )}
       </ScrollView>
 
@@ -1096,8 +1098,17 @@ function CreatorDetail({
   );
 }
 
-function VideoTile({ video, onPress }: { video: VtVideo; onPress: () => void }) {
+function VideoTile({ video, state, onPress }: { video: VtVideo; state?: AnalysisState; onPress: () => void }) {
   const theme = useTheme();
+  // badge only when there's analysis activity: amber = running, green = done, red = error
+  const badge =
+    state?.status === 'processing'
+      ? { bg: theme.accent, icon: 'hourglass' as const, color: '#1A1A1A' }
+      : state?.status === 'error'
+        ? { bg: theme.danger, icon: 'alert' as const, color: '#fff' }
+        : state?.status === 'done'
+          ? { bg: theme.success, icon: 'sparkles' as const, color: '#fff' }
+          : null;
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.vTile, { borderColor: theme.border }, pressed && { opacity: 0.8 }]}>
       {video.thumbnail ? (
@@ -1107,9 +1118,11 @@ function VideoTile({ video, onPress }: { video: VtVideo; onPress: () => void }) 
           <Ionicons name="film-outline" size={22} color={theme.textSecondary} />
         </View>
       )}
-      <View style={[styles.analyzeBadge, { backgroundColor: theme.primary, borderColor: theme.card }]}>
-        <Ionicons name="sparkles" size={12} color={theme.primaryText} />
-      </View>
+      {badge && (
+        <View style={[styles.analyzeBadge, { backgroundColor: badge.bg, borderColor: theme.card }]}>
+          <Ionicons name={badge.icon} size={12} color={badge.color} />
+        </View>
+      )}
       <View style={styles.vMeta}>
         <Ionicons name="eye" size={13} color={theme.textSecondary} />
         <ThemedText type="small" themeColor="textSecondary">
@@ -1126,19 +1139,39 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
   const { isAdmin } = useAuth();
   const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
+  // 'processing' = a background run is in flight (the modal can be closed).
   const [analyzing, setAnalyzing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
+  // transcript is the main thing admins come for — open by default
+  const [showTranscript, setShowTranscript] = useState(true);
 
   useEffect(() => {
     let active = true;
     getVideoAnalysis(video.id).then((r) => {
       if (!active) return;
       setAnalysis(r?.analysis ?? null);
+      setAnalyzing(r?.status === 'processing');
+      if (r?.status === 'error') setErr(r.error ?? 'Analysis failed — try again.');
       setLoading(false);
     });
+    // Live: the breakdown runs server-side and can finish after the admin has
+    // closed and reopened this — reflect status changes the moment they land.
+    const ch = supabase
+      .channel(`analysis:${video.id}:${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'video_analyses', filter: `video_id=eq.${video.id}` }, (payload) => {
+        const row = payload.new as { status?: string; analysis?: VideoAnalysis | null; error?: string | null };
+        setAnalyzing(row.status === 'processing');
+        if (row.status === 'done') {
+          setAnalysis(row.analysis ?? null);
+          setErr(null);
+        } else if (row.status === 'error') {
+          setErr(row.error ?? 'Analysis failed — try again.');
+        }
+      })
+      .subscribe();
     return () => {
       active = false;
+      supabase.removeChannel(ch);
     };
   }, [video.id]);
 
@@ -1147,17 +1180,26 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
     setAnalyzing(true);
     setErr(null);
     const r = await vtAnalyzeVideo(video.id, force);
-    setAnalyzing(false);
-    if (r.ok) setAnalysis(r.analysis ?? null);
-    else setErr(r.error ?? 'Still processing — try again in a moment.');
+    if (!r.ok) {
+      setAnalyzing(false);
+      setErr(r.error ?? 'Could not start analysis — try again.');
+      return;
+    }
+    // 'done' = it was already cached; otherwise it's running in the background
+    // and the realtime subscription will flip us to the result when ready.
+    if (r.status === 'done') {
+      setAnalysis(r.analysis ?? null);
+      setAnalyzing(false);
+    }
   }
 
   const blocks: { label: string; text?: string; tint: string }[] = [
     { label: 'Hook', text: analysis?.hook, tint: theme.accent },
     { label: 'Summary', text: analysis?.summary, tint: theme.textSecondary },
     { label: 'What worked', text: analysis?.whatWorked, tint: theme.success },
-    { label: 'Suggestions', text: analysis?.suggestions, tint: theme.primary },
   ];
+  const segs = transcriptSegs(analysis);
+  const overlays = analysis?.overlays ?? [];
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -1189,11 +1231,34 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
               <View style={{ alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four }}>
                 <ActivityIndicator color={theme.primary} />
                 <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-                  Analyzing with Gemini… first run can take up to ~3 min.
+                  Analyzing with AI… first run can take a few minutes.{'\n'}You can close this — it keeps running and gets marked when done.
                 </ThemedText>
               </View>
             ) : analysis ? (
               <>
+                {segs.length > 0 && (
+                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <Pressable onPress={() => setShowTranscript((s) => !s)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <ThemedText style={[styles.aiBlkLabel, { color: theme.primary }]}>TRANSCRIPT</ThemedText>
+                      <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+                    </Pressable>
+                    {showTranscript &&
+                      segs.map((seg, i) => (
+                        <ThemedText key={i} style={styles.aiBlkText}>
+                          {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
+                          {seg.text}
+                        </ThemedText>
+                      ))}
+                  </View>
+                )}
+                {overlays.length > 0 && (
+                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>OVERLAYS USED</ThemedText>
+                    {overlays.map((o, i) => (
+                      <ThemedText key={i} style={styles.aiBlkText}>“{o}”</ThemedText>
+                    ))}
+                  </View>
+                )}
                 {blocks
                   .filter((b) => !!b.text)
                   .map((b) => (
@@ -1209,21 +1274,6 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
                     {(analysis.topics ?? []).map((t) => (
                       <View key={t} style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>{t}</ThemedText></View>
                     ))}
-                  </View>
-                )}
-                {!!analysis.transcript?.length && (
-                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    <Pressable onPress={() => setShowTranscript((s) => !s)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <ThemedText style={[styles.aiBlkLabel, { color: theme.textSecondary }]}>TRANSCRIPT</ThemedText>
-                      <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
-                    </Pressable>
-                    {showTranscript &&
-                      analysis.transcript!.map((seg, i) => (
-                        <ThemedText key={i} type="small" themeColor="textSecondary">
-                          {typeof seg.start === 'number' ? `[${Math.floor(seg.start)}s] ` : ''}
-                          {seg.text}
-                        </ThemedText>
-                      ))}
                   </View>
                 )}
               </>

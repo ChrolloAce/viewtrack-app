@@ -121,30 +121,59 @@ export async function vtRefreshCreator(profileId: string): Promise<{ refreshed: 
 
 export type VtCreator = { id: string; name: string; avatarUrl: string | null; accountCount: number; totalViews: number; totalVideos: number };
 
-export type TranscriptSeg = { start?: number; end?: number; text?: string };
+export type TranscriptSeg = { start?: number; end?: number; timestamp?: string; text?: string };
 export type VideoAnalysis = {
-  transcript?: TranscriptSeg[];
+  /** ViewTrack returns this as the full transcript STRING; older rows may hold segment arrays. */
+  transcript?: string | TranscriptSeg[];
+  transcriptSegments?: TranscriptSeg[];
   summary?: string;
   hook?: string;
   topics?: string[];
   tone?: string;
   pacing?: string;
   whatWorked?: string;
-  suggestions?: string;
+  suggestions?: string | string[];
+  /** Text overlays detected in the video — only present once ViewTrack's analyze prompt extracts them. */
+  overlays?: string[];
 };
 
-/** Admin: run (or fetch cached) Gemini analysis of a tracked video. Slow on first run. */
-export async function vtAnalyzeVideo(videoId: string, force = false): Promise<{ ok: boolean; analysis?: VideoAnalysis; cached?: boolean; error?: string }> {
+/** Normalize the transcript (string or either segment shape) into renderable segments. */
+export function transcriptSegs(a: VideoAnalysis | null | undefined): TranscriptSeg[] {
+  if (!a) return [];
+  if (Array.isArray(a.transcriptSegments) && a.transcriptSegments.length) return a.transcriptSegments;
+  if (Array.isArray(a.transcript)) return a.transcript;
+  if (typeof a.transcript === 'string' && a.transcript.trim()) return [{ text: a.transcript.trim() }];
+  return [];
+}
+
+/** Label for a segment's time marker: "00:06" or "[6s]" depending on what the API sent. */
+export function segTime(seg: TranscriptSeg): string | null {
+  if (seg.timestamp) return seg.timestamp;
+  if (typeof seg.start === 'number') return `${Math.floor(seg.start)}s`;
+  return null;
+}
+
+export type AnalysisStatus = 'processing' | 'done' | 'error';
+
+/**
+ * Admin: kick off (or fetch cached) Gemini analysis of a tracked video.
+ * The breakdown runs on the server in the background, so this returns almost
+ * immediately with status 'processing' — the result lands in `video_analyses`
+ * (watch it live via useVideoAnalyses). 'done' means it was already cached.
+ */
+export async function vtAnalyzeVideo(videoId: string, force = false): Promise<{ ok: boolean; status?: AnalysisStatus; analysis?: VideoAnalysis; cached?: boolean; error?: string }> {
   const { data, error } = await supabase.functions.invoke('vt-analyze', { body: { videoId, force } });
   if (error) return { ok: false, error: error.message };
-  const d = data as { ok?: boolean; analysis?: VideoAnalysis; cached?: boolean; error?: string } | null;
-  return d?.ok ? { ok: true, analysis: d.analysis, cached: d.cached } : { ok: false, error: d?.error ?? 'failed' };
+  const d = data as { ok?: boolean; status?: AnalysisStatus; analysis?: VideoAnalysis; cached?: boolean; error?: string } | null;
+  return d?.ok ? { ok: true, status: d.status, analysis: d.analysis, cached: d.cached } : { ok: false, error: d?.error ?? 'failed' };
 }
 
 /** The stored analysis for a video (null if never analyzed). */
-export async function getVideoAnalysis(videoId: string): Promise<{ analysis: VideoAnalysis; flagged: boolean } | null> {
-  const { data } = await sb.from('video_analyses').select('analysis, flagged').eq('video_id', videoId).maybeSingle();
-  return data ? { analysis: data.analysis as VideoAnalysis, flagged: !!data.flagged } : null;
+export async function getVideoAnalysis(videoId: string): Promise<{ analysis: VideoAnalysis | null; flagged: boolean; status: AnalysisStatus; error: string | null } | null> {
+  const { data } = await sb.from('video_analyses').select('analysis, flagged, status, error').eq('video_id', videoId).maybeSingle();
+  return data
+    ? { analysis: (data.analysis as VideoAnalysis) ?? null, flagged: !!data.flagged, status: (data.status as AnalysisStatus) ?? 'done', error: data.error ?? null }
+    : null;
 }
 
 /** Admin: list the creators that exist in ViewTrack (to import into the app). */
@@ -153,10 +182,15 @@ export async function vtListCreators(): Promise<VtCreator[]> {
   return (data as { creators?: VtCreator[] } | null)?.creators ?? [];
 }
 
-/** Admin: every tracked video in the project (for the Videos grid). */
-export async function vtListVideos(limit = 300): Promise<VtVideo[]> {
-  const { data } = await supabase.functions.invoke('vt-refresh', { body: { action: 'list-videos', limit } });
-  return (data as { videos?: VtVideo[] } | null)?.videos ?? [];
+/**
+ * Admin: tracked videos in the project (for the Videos grid), newest first.
+ * Pass `days` to fetch every video uploaded in that window across all creators
+ * (null = all-time, bounded by `limit`). Returns the project's total count too.
+ */
+export async function vtListVideos(days: number | null = null, limit?: number): Promise<{ videos: VtVideo[]; total: number; truncated: boolean }> {
+  const { data } = await supabase.functions.invoke('vt-refresh', { body: { action: 'list-videos', days, limit } });
+  const d = data as { videos?: VtVideo[]; total?: number; truncated?: boolean } | null;
+  return { videos: d?.videos ?? [], total: d?.total ?? 0, truncated: !!d?.truncated };
 }
 
 export type AccountLink = {

@@ -13,7 +13,7 @@ import { Border, brutalShadow, MaxContentWidth, Radius, Spacing } from '@/consta
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { VIEWS_BONUS, VIEWS_BONUS_PER } from '@/lib/use-stats';
-import { getVideoAnalysis, vtAnalyzeVideo, type VideoAnalysis, type VtVideo } from '@/lib/viewtrack';
+import { getVideoAnalysis, segTime, transcriptSegs, vtAnalyzeVideo, type VideoAnalysis, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -50,7 +50,8 @@ export default function VideoDetail() {
   const [loadingA, setLoadingA] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [aErr, setAErr] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
+  // transcript is the main thing this screen is for — open by default
+  const [showTranscript, setShowTranscript] = useState(true);
 
   useEffect(() => {
     if (!videoId) return;
@@ -180,10 +181,35 @@ export default function VideoDetail() {
             </BrutalCard>
           ) : analysis ? (
             <>
+              {transcriptSegs(analysis).length > 0 && (
+                <BrutalCard style={{ gap: Spacing.two }}>
+                  <Pressable onPress={() => setShowTranscript((s) => !s)} style={styles.transcriptHead}>
+                    <ThemedText style={styles.aiBlockLabel}>Transcript</ThemedText>
+                    <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textSecondary} />
+                  </Pressable>
+                  {showTranscript &&
+                    transcriptSegs(analysis).map((seg, i) => (
+                      <ThemedText key={i} style={styles.aiBlockText}>
+                        {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
+                        {seg.text}
+                      </ThemedText>
+                    ))}
+                </BrutalCard>
+              )}
+              {!!analysis.overlays?.length && (
+                <BrutalCard style={{ gap: 5 }}>
+                  <View style={styles.aiBlockHead}>
+                    <Ionicons name="text" size={16} color={theme.accent} />
+                    <ThemedText style={styles.aiBlockLabel}>Overlays used</ThemedText>
+                  </View>
+                  {analysis.overlays.map((o, i) => (
+                    <ThemedText key={i} style={styles.aiBlockText}>“{o}”</ThemedText>
+                  ))}
+                </BrutalCard>
+              )}
               {!!analysis.hook && <AiBlock icon="fish" label="Hook" text={analysis.hook} tint={theme.accent} />}
               {!!analysis.summary && <AiBlock icon="document-text" label="Summary" text={analysis.summary} tint={theme.textSecondary} />}
               {!!analysis.whatWorked && <AiBlock icon="checkmark-circle" label="What worked" text={analysis.whatWorked} tint={theme.success} />}
-              {!!analysis.suggestions && <AiBlock icon="bulb" label="Suggestions" text={analysis.suggestions} tint={theme.primary} />}
               {(!!analysis.tone || !!analysis.pacing || !!analysis.topics?.length) && (
                 <View style={styles.aiChips}>
                   {!!analysis.tone && <Chip label={`tone: ${analysis.tone}`} />}
@@ -192,21 +218,6 @@ export default function VideoDetail() {
                     <Chip key={t} label={t} />
                   ))}
                 </View>
-              )}
-              {!!analysis.transcript?.length && (
-                <BrutalCard style={{ gap: Spacing.two }}>
-                  <Pressable onPress={() => setShowTranscript((s) => !s)} style={styles.transcriptHead}>
-                    <ThemedText style={styles.aiBlockLabel}>Transcript</ThemedText>
-                    <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textSecondary} />
-                  </Pressable>
-                  {showTranscript &&
-                    analysis.transcript!.map((seg, i) => (
-                      <ThemedText key={i} type="small" themeColor="textSecondary">
-                        {typeof seg.start === 'number' ? `[${Math.floor(seg.start)}s] ` : ''}
-                        {seg.text}
-                      </ThemedText>
-                    ))}
-                </BrutalCard>
               )}
               {isAdmin && (
                 <Pressable onPress={() => analyze(true)} disabled={analyzing} style={({ pressed }) => [styles.reanalyze, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
