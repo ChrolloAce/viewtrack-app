@@ -11,8 +11,9 @@ import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
+import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
-import { vtListVideos, type VtVideo } from '@/lib/viewtrack';
+import { vtAnalyzeVideo, vtListVideos, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -52,10 +53,14 @@ export function VideosGrid() {
   const [sort, setSort] = useState<Sort>('views');
   const [timeframe, setTimeframe] = useState<Timeframe>('7d');
   const [flagFilter, setFlagFilter] = useState<FlagFilter>('all');
+  const [sectionFilter, setSectionFilter] = useState<Partial<Record<SectionKind, string>>>({});
   const [open, setOpen] = useState<VtVideo | null>(null);
   const [editChecklist, setEditChecklist] = useState(false);
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
+  const [matching, setMatching] = useState(false);
   const { map: analyses } = useVideoAnalyses();
   const { reqs } = useFlagRequirements();
+  const { clusters, byVideo, reload: reloadSections } = useSections();
 
   // flag verdict per analyzed video — recomputed live when requirements change
   const flaggedById = useMemo(() => {
@@ -89,11 +94,61 @@ export function VideosGrid() {
     let arr = [...videos];
     if (flagFilter === 'flagged') arr = arr.filter((v) => flaggedById[v.id] === true);
     else if (flagFilter === 'passing') arr = arr.filter((v) => flaggedById[v.id] === false);
+    for (const kind of ['hook', 'body', 'cta'] as SectionKind[]) {
+      const cid = sectionFilter[kind];
+      if (cid) arr = arr.filter((v) => byVideo[v.id]?.[kind] === cid);
+    }
     if (sort === 'recent') arr.sort((a, b) => new Date(b.uploadDate ?? 0).getTime() - new Date(a.uploadDate ?? 0).getTime());
     else if (sort === 'likes') arr.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
-  }, [videos, sort, flagFilter, flaggedById]);
+  }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo]);
+
+  // stat boxes reflect the FILTERED set — pick a hook and these become that hook's numbers
+  const stats = useMemo(() => {
+    const viewsTotal = sorted.reduce((s, v) => s + (v.views ?? 0), 0);
+    const analyzed = sorted.filter((v) => analyses[v.id]?.status === 'done').length;
+    const flaggedCount = sorted.filter((v) => flaggedById[v.id] === true).length;
+    return { count: sorted.length, viewsTotal, avg: sorted.length ? Math.round(viewsTotal / sorted.length) : 0, analyzed, flaggedCount };
+  }, [sorted, analyses, flaggedById]);
+
+  const sectionOptions = useMemo(() => {
+    const make = (kind: SectionKind, allLabel: string): DropdownOption<string>[] => [
+      { value: 'all', label: allLabel, icon: 'albums-outline' },
+      ...clusters
+        .filter((c) => c.kind === kind && c.video_count > 1)
+        .map((c) => ({ value: c.id, label: `${c.label.slice(0, 34)}${c.label.length > 34 ? '…' : ''} (${c.video_count})`, icon: 'document-text-outline' as const })),
+    ];
+    return { hook: make('hook', 'All hooks'), body: make('body', 'All bodies'), cta: make('cta', 'All CTAs') };
+  }, [clusters]);
+
+  async function analyzeAll() {
+    const targets = sorted.filter((v) => !analyses[v.id]);
+    if (!targets.length || batch) return;
+    setBatch({ done: 0, total: targets.length });
+    const queue = [...targets];
+    // fire-and-forget per video: vt-analyze returns immediately and the Gemini
+    // run continues server-side, so this just paces the queue-up.
+    await Promise.all(
+      Array.from({ length: 2 }, async () => {
+        while (queue.length) {
+          const v = queue.shift()!;
+          await vtAnalyzeVideo(v.id, false);
+          await new Promise((r) => setTimeout(r, 800));
+          setBatch((b) => (b ? { ...b, done: b.done + 1 } : b));
+        }
+      }),
+    );
+    setBatch(null);
+  }
+
+  async function matchScripts() {
+    if (matching) return;
+    setMatching(true);
+    await runSectionMatch();
+    await reloadSections();
+    setMatching(false);
+  }
 
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
 
@@ -104,22 +159,46 @@ export function VideosGrid() {
         every tracked video across all creators · tap one to open and run an AI breakdown
       </ThemedText>
 
-      {/* timeframe + sort dropdowns */}
+      {/* filters + actions */}
       <View style={styles.controls}>
         <Dropdown value={timeframe} options={TF_OPTS} onChange={setTimeframe} minWidth={170} />
         <Dropdown value={sort} options={SORTS} onChange={setSort} minWidth={170} />
         {reqs.length > 0 && <Dropdown value={flagFilter} options={FLAG_FILTERS} onChange={setFlagFilter} minWidth={150} />}
+        {sectionOptions.hook.length > 1 && (
+          <Dropdown value={sectionFilter.hook ?? 'all'} options={sectionOptions.hook} onChange={(v) => setSectionFilter((f) => ({ ...f, hook: v === 'all' ? undefined : v }))} minWidth={170} />
+        )}
+        {sectionOptions.body.length > 1 && (
+          <Dropdown value={sectionFilter.body ?? 'all'} options={sectionOptions.body} onChange={(v) => setSectionFilter((f) => ({ ...f, body: v === 'all' ? undefined : v }))} minWidth={170} />
+        )}
+        {sectionOptions.cta.length > 1 && (
+          <Dropdown value={sectionFilter.cta ?? 'all'} options={sectionOptions.cta} onChange={(v) => setSectionFilter((f) => ({ ...f, cta: v === 'all' ? undefined : v }))} minWidth={170} />
+        )}
         <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
           <Ionicons name="flag-outline" size={15} color={theme.text} />
           <ThemedText style={styles.checklistBtnText}>checklist</ThemedText>
         </Pressable>
-        {!loading && (
-          <ThemedText type="small" themeColor="textSecondary" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
-            {sorted.length} {timeframe === 'all' ? `of ${total} videos` : `videos · ${tfLabel}`}
-            {truncated ? ' (capped)' : ''}
+        <Pressable onPress={matchScripts} disabled={matching} style={[styles.checklistBtn, { borderColor: theme.border }, matching && { opacity: 0.5 }]}>
+          <Ionicons name="git-compare-outline" size={15} color={theme.text} />
+          <ThemedText style={styles.checklistBtnText}>{matching ? 'matching…' : 'match scripts'}</ThemedText>
+        </Pressable>
+        <Pressable onPress={analyzeAll} disabled={!!batch} style={[styles.checklistBtn, { borderColor: theme.border, backgroundColor: theme.primary }, !!batch && { opacity: 0.6 }]}>
+          <Ionicons name="sparkles" size={15} color={theme.primaryText} />
+          <ThemedText style={[styles.checklistBtnText, { color: theme.primaryText }]}>
+            {batch ? `queuing ${batch.done}/${batch.total}…` : 'analyze all'}
           </ThemedText>
-        )}
+        </Pressable>
       </View>
+
+      {/* stat boxes — reflect whatever filters are active */}
+      {!loading && (
+        <View style={styles.statRow}>
+          <StatBox label={timeframe === 'all' ? `videos (of ${total})` : `videos · ${tfLabel}`} value={`${stats.count}${truncated ? '+' : ''}`} icon="film-outline" />
+          <StatBox label="total views" value={compact(stats.viewsTotal)} icon="eye" />
+          <StatBox label="avg views" value={compact(stats.avg)} icon="pulse" />
+          <StatBox label="analyzed" value={`${stats.analyzed}/${stats.count}`} icon="sparkles" />
+          <StatBox label="flagged" value={`${stats.flaggedCount}`} icon="flag" danger={stats.flaggedCount > 0} />
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.grid}>
@@ -142,6 +221,21 @@ export function VideosGrid() {
       {open && <AnalyzeModal video={open} onClose={() => setOpen(null)} />}
       {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
     </ScrollView>
+  );
+}
+
+function StatBox({ label, value, icon, danger }: { label: string; value: string; icon: string; danger?: boolean }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.statBox, { borderColor: theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 3)]}>
+      <View style={styles.statTop}>
+        <Ionicons name={icon as never} size={15} color={danger ? theme.danger : theme.primary} />
+        <ThemedText style={[styles.statValue, danger && { color: theme.danger }]}>{value}</ThemedText>
+      </View>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -220,6 +314,10 @@ const styles = StyleSheet.create({
   flagText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   checklistBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
   checklistBtnText: { fontSize: 14, fontWeight: '800' },
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.three },
+  statBox: { minWidth: 130, flexGrow: 1, maxWidth: 200, gap: 2, paddingVertical: Spacing.two + 2, paddingHorizontal: Spacing.two + 4, borderRadius: Radius.md, borderWidth: Border.width },
+  statTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  statValue: { fontSize: 21, lineHeight: 26, fontWeight: '900' },
   viewsText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   acct: { fontSize: 13, fontWeight: '800', padding: 7 },
 });
