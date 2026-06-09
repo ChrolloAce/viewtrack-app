@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
+import { Dropdown } from '@/components/dropdown';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
@@ -75,29 +76,24 @@ export function CreatorLeaderboard() {
 
   return (
     <View style={{ gap: Spacing.three }}>
-      {/* timeframe */}
-      <View style={styles.row}>
-        {TF.map((t) => {
-          const on = tf === t.key;
-          return (
-            <Pressable key={t.key} onPress={() => setTf(t.key)} style={[styles.tfPill, { borderColor: theme.border }, on && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-              <ThemedText style={[styles.tfText, { color: on ? theme.primaryText : theme.textSecondary }]}>{t.label}</ThemedText>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* sort */}
-      <View style={styles.sortRow}>
-        {SORTS.map((s) => {
-          const on = sort === s.key;
-          return (
-            <Pressable key={s.key} onPress={() => setSort(s.key)} style={[styles.sortPill, { borderColor: on ? theme.primary : theme.border, backgroundColor: on ? theme.primaryMuted : theme.card }]}>
-              <Ionicons name={s.icon as never} size={13} color={on ? theme.primary : theme.textSecondary} />
-              <ThemedText style={[styles.sortText, { color: on ? theme.primary : theme.text }]}>{s.label}</ThemedText>
-            </Pressable>
-          );
-        })}
+      {/* filters — compact dropdowns instead of scattered pills */}
+      <View style={styles.filters}>
+        <View style={styles.filterCol}>
+          <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>TIMEFRAME</ThemedText>
+          <Dropdown
+            value={tf}
+            onChange={(v) => setTf(v as Timeframe)}
+            options={TF.map((t) => ({ value: t.key, label: t.label, icon: 'calendar-outline' }))}
+          />
+        </View>
+        <View style={styles.filterCol}>
+          <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>SORT BY</ThemedText>
+          <Dropdown
+            value={sort}
+            onChange={(v) => setSort(v as Sort)}
+            options={SORTS.map((s) => ({ value: s.key, label: s.label, icon: s.icon }))}
+          />
+        </View>
       </View>
 
       {loading ? (
@@ -156,12 +152,9 @@ export function CreatorLeaderboard() {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
-  tfPill: { paddingHorizontal: Spacing.three, paddingVertical: 7, borderRadius: Radius.full, borderWidth: Border.width },
-  tfText: { fontSize: 13, fontWeight: '800' },
-  sortRow: { flexDirection: 'row', gap: Spacing.one + 2, flexWrap: 'wrap' },
-  sortPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.two + 2, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1.5 },
-  sortText: { fontSize: 12, fontWeight: '800' },
+  filters: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  filterCol: { flex: 1, minWidth: 150, gap: 5 },
+  filterLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.six },
   rowCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, padding: Spacing.two, borderRadius: Radius.lg, borderWidth: Border.width },
   rankBadge: { width: 30, height: 30, borderRadius: 9, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center' },

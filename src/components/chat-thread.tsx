@@ -29,6 +29,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AudioBubble } from '@/components/audio-bubble';
 import { BrutalAvatar } from '@/components/brutal';
 import { ChatImage } from '@/components/chat-image';
+import { ChatSkeleton } from '@/components/chat-skeleton';
+import { blockUser, reportUser, useBlocks } from '@/lib/blocks';
 import { ThemedText } from '@/components/themed-text';
 import { Waveform } from '@/components/waveform';
 import { Border, BottomTabInset, brutalShadow, Radius, Spacing } from '@/constants/theme';
@@ -170,6 +172,7 @@ export function ChatThread({
   const theme = useTheme();
   const router = useRouter();
   const { messages, senders, reactions, loading, sending, error, userId, send, toggleReaction, deleteMessage } = useThread(conversationId);
+  const { blocked } = useBlocks();
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Pending[]>([]);
   const [busy, setBusy] = useState(false);
@@ -182,6 +185,7 @@ export function ChatThread({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [focusRect, setFocusRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [animateRx, setAnimateRx] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const focusAnim = useRef(new Animated.Value(0)).current;
   const bubbleRefs = useRef<Map<string, View>>(new Map());
   const { width: winW, height: winH } = useWindowDimensions();
@@ -195,6 +199,13 @@ export function ChatThread({
     const t = setTimeout(() => setAnimateRx(true), 500);
     return () => clearTimeout(t);
   }, [loading, conversationId]);
+
+  // Auto-dismiss the report/block confirmation toast.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Spring the focus menu in (emoji bar bounce) when a message is long-pressed.
   useEffect(() => {
@@ -239,7 +250,11 @@ export function ChatThread({
 
   // Newest-first for an INVERTED list — it opens pinned to the bottom with no
   // scroll/redraw, and reacting never shifts the scroll position.
-  const inverted = useMemo(() => [...messages].slice().reverse(), [messages]);
+  // Hide messages from anyone the viewer has blocked.
+  const inverted = useMemo(
+    () => [...messages].filter((m) => !blocked.has(m.sender_id)).reverse(),
+    [messages, blocked],
+  );
 
   // For an inverted list the bottom is offset 0.
   const scrollToEnd = useCallback((animated = false) => {
@@ -500,9 +515,7 @@ export function ChatThread({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : 0}>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={theme.primary} />
-          </View>
+          <ChatSkeleton />
         ) : (
           <FlatList
             ref={listRef}
@@ -798,6 +811,32 @@ export function ChatThread({
                         <Ionicons name="trash" size={20} color={theme.danger} />
                       </Pressable>
                     )}
+                    {!isMine && (
+                      <>
+                        <Pressable
+                          onPress={() => {
+                            impact('medium');
+                            reportUser(fm.sender_id, fm.id, conversationId, null, fm.body ?? fm.attachment_type ?? '');
+                            setActionMsg(null);
+                            setToast('Reported — our team will review it.');
+                          }}
+                          style={({ pressed }) => [styles.menuItem, { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && { backgroundColor: theme.backgroundElement }]}>
+                          <ThemedText style={styles.menuLabel}>Report</ThemedText>
+                          <Ionicons name="flag-outline" size={20} color={theme.text} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            impact('medium');
+                            blockUser(fm.sender_id);
+                            setActionMsg(null);
+                            setToast(`Blocked ${senders[fm.sender_id]?.full_name ?? 'user'} — you won't see their messages.`);
+                          }}
+                          style={({ pressed }) => [styles.menuItem, { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && { backgroundColor: theme.backgroundElement }]}>
+                          <ThemedText style={[styles.menuLabel, { color: theme.danger }]}>Block</ThemedText>
+                          <Ionicons name="ban-outline" size={20} color={theme.danger} />
+                        </Pressable>
+                      </>
+                    )}
                   </Animated.View>
                 </>
               );
@@ -840,12 +879,26 @@ export function ChatThread({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* report / block confirmation toast */}
+      {toast && (
+        <View style={styles.toastWrap} pointerEvents="none">
+          <View style={[styles.toast, { backgroundColor: theme.text }]}>
+            <ThemedText style={[styles.toastText, { color: theme.background }]} numberOfLines={2}>
+              {toast}
+            </ThemedText>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  toastWrap: { position: 'absolute', left: 0, right: 0, bottom: 90, alignItems: 'center', zIndex: 60 },
+  toast: { maxWidth: 360, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: Radius.full },
+  toastText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.six },
   flipBack: { transform: [{ scaleY: -1 }] },
   listContent: {

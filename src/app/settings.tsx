@@ -13,6 +13,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { pickAndUploadAvatar } from '@/lib/avatar';
 import { badgeFor } from '@/lib/badges';
+import { emitEarnings } from '@/lib/earnings-bus';
 import { emitLevelUp } from '@/lib/level-up-bus';
 import { supabase } from '@/lib/supabase';
 import { useProgress } from '@/lib/use-progress';
@@ -41,6 +42,7 @@ const DEMO_LEVELS = [
   { level: 9, icon: '⚡', title: 'Master', color: '#E83B3B' },
   { level: 10, icon: '🐐', title: 'Hall of Fame', color: '#EF3B2E' },
 ];
+const DEMO_BONUSES = [1, 3, 5, 2];
 
 function randomCode(prefix: string, len: number) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -67,6 +69,19 @@ export default function SettingsScreen() {
   const { accounts } = useStats();
   const [links, setLinks] = useState<AccountLink[]>([]);
   const [linkOpen, setLinkOpen] = useState(false);
+  const lvIdx = useRef(0);
+  const bonusIdx = useRef(0);
+
+  function previewLevelUp() {
+    const i = lvIdx.current % (DEMO_LEVELS.length - 1);
+    emitLevelUp({ ...DEMO_LEVELS[i + 1], from: DEMO_LEVELS[i] });
+    lvIdx.current += 1;
+  }
+  function previewBonus() {
+    const n = DEMO_BONUSES[bonusIdx.current % DEMO_BONUSES.length];
+    emitEarnings({ earned: n * 100, newBonuses: n, total: 1000 + n * 100 });
+    bonusIdx.current += 1;
+  }
   const loadLinks = useCallback(async () => {
     if (uid) setLinks(await myLinks(uid));
   }, [uid]);
@@ -80,7 +95,6 @@ export default function SettingsScreen() {
   const [uploading, setUploading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const demoIdx = useRef(0);
 
   useEffect(() => {
     setName(profile?.full_name ?? '');
@@ -235,16 +249,9 @@ export default function SettingsScreen() {
             </Section>
           )}
 
-          <Section title="developer">
-            <BrutalButton
-              label="✨ preview level-up"
-              variant="accent"
-              onPress={() => {
-                const i = demoIdx.current % (DEMO_LEVELS.length - 1);
-                emitLevelUp({ ...DEMO_LEVELS[i + 1], from: DEMO_LEVELS[i] });
-                demoIdx.current += 1;
-              }}
-            />
+          <Section title="previews">
+            <BrutalButton label="✨ preview level-up" variant="accent" onPress={previewLevelUp} />
+            <BrutalButton label="💰 preview bonus unlock" variant="neutral" onPress={previewBonus} />
           </Section>
 
           <ChangePassword />

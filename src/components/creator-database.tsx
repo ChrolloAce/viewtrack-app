@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { createElement, useEffect, useMemo, useState } from 'react';
-import { Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { useCreatorsData, type Creator, type ExistingLink } from '@/app/(tabs)/creators';
 import { AccountManager } from '@/components/account-manager';
@@ -12,11 +12,13 @@ import { ViewsBreakdown } from '@/components/views-breakdown';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
+import { addPendingCreator, deletePendingCreator, usePendingCreators, type PendingCreator } from '@/lib/creators';
+import { recordPayout, usePayouts } from '@/lib/payouts';
 import { badgeFor } from '@/lib/badges';
 import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, vtAccounts, vtCreator, vtCreatorActivity, type CreatorActivity, type CreatorView, type VtProject, type VtVideo } from '@/lib/viewtrack';
+import { detectPlatform, getVideoAnalysis, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -98,6 +100,34 @@ export function CreatorDatabase() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const { pending } = usePendingCreators();
+
+  async function syncNow() {
+    if (syncing) return;
+    setSyncing(true);
+    const r = await vtRefreshProject();
+    setSyncing(false);
+    setSyncMsg(r.ok ? 'Sync started — fresh stats land in a minute or two. Hit Refresh after.' : 'Sync failed — try again.');
+    setTimeout(() => setSyncMsg(null), 6000);
+  }
+
+  const togglePick = (id: string) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  async function bulkAccess(disabled: boolean) {
+    const ids = [...picked];
+    if (Platform.OS === 'web' && !window.confirm(`${disabled ? 'Remove access for' : 'Restore access for'} ${ids.length} creator${ids.length === 1 ? '' : 's'}?`)) return;
+    await (supabase as unknown as { from: (t: string) => any }).from('profiles').update({ disabled }).in('id', ids);
+    setPicked(new Set());
+    reload();
+  }
 
   useEffect(() => {
     let active = true;
@@ -151,6 +181,14 @@ export function CreatorDatabase() {
             Manage and track every creator on the platform
           </ThemedText>
         </View>
+        <Pressable onPress={() => setAddOpen(true)} style={({ pressed }) => [styles.refreshBtn, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}>
+          <Ionicons name="person-add" size={16} color={theme.text} />
+          <ThemedText style={styles.refreshText}>Add creator</ThemedText>
+        </Pressable>
+        <Pressable onPress={syncNow} disabled={syncing} style={({ pressed }) => [styles.refreshBtn, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}>
+          <Ionicons name="cloud-download-outline" size={16} color={syncing ? theme.textSecondary : theme.text} />
+          <ThemedText style={[styles.refreshText, syncing && { color: theme.textSecondary }]}>{syncing ? 'Syncing…' : 'Sync now'}</ThemedText>
+        </Pressable>
         <Pressable onPress={() => setBulkOpen(true)} style={({ pressed }) => [styles.refreshBtn, { borderColor: theme.border, backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}>
           <Ionicons name="add" size={18} color={theme.primaryText} />
           <ThemedText style={[styles.refreshText, { color: theme.primaryText }]}>Add accounts</ThemedText>
@@ -162,6 +200,31 @@ export function CreatorDatabase() {
       </View>
 
       <BulkAddAccounts visible={bulkOpen} creators={creators} projects={projects} onClose={() => setBulkOpen(false)} onDone={reload} />
+      <AddCreatorModal visible={addOpen} onClose={() => setAddOpen(false)} />
+
+      {syncMsg && (
+        <View style={[styles.syncBanner, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}>
+          <Ionicons name="sync" size={15} color={theme.primary} />
+          <ThemedText type="small" style={{ color: theme.primary, fontWeight: '700', flex: 1 }}>
+            {syncMsg}
+          </ThemedText>
+        </View>
+      )}
+
+      {picked.size > 0 && (
+        <View style={[styles.selBar, { backgroundColor: theme.text, borderColor: theme.border }]}>
+          <ThemedText style={[styles.selBarText, { color: theme.background }]}>{picked.size} selected</ThemedText>
+          <Pressable onPress={() => bulkAccess(true)} style={[styles.selBarBtn, { backgroundColor: theme.danger }]}>
+            <ThemedText style={styles.selBarBtnText}>Remove access</ThemedText>
+          </Pressable>
+          <Pressable onPress={() => bulkAccess(false)} style={[styles.selBarBtn, { backgroundColor: theme.success }]}>
+            <ThemedText style={styles.selBarBtnText}>Restore</ThemedText>
+          </Pressable>
+          <Pressable onPress={() => setPicked(new Set())} style={[styles.selBarBtn, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText style={[styles.selBarBtnText, { color: theme.text }]}>Clear</ThemedText>
+          </Pressable>
+        </View>
+      )}
 
       {/* summary stats */}
       <View style={styles.statRow}>
@@ -198,6 +261,11 @@ export function CreatorDatabase() {
           <ThemedText style={[styles.th, styles.colSm]}>STATUS</ThemedText>
           <View style={styles.colChevron} />
         </View>
+        {/* manually-added, not-yet-claimed creators */}
+        {status !== 'removed' &&
+          pending
+            .filter((pc) => !query.trim() || pc.full_name.toLowerCase().includes(query.trim().toLowerCase()))
+            .map((pc) => <PendingRow key={pc.id} pc={pc} />)}
         {listLoading ? (
           [0, 1, 2, 3, 4, 5].map((i) => (
             <View key={i} style={[styles.tr, { borderBottomColor: theme.border }]}>
@@ -241,6 +309,14 @@ export function CreatorDatabase() {
                 onPress={() => setSelectedId(c.id)}
                 style={(s) => [styles.tr, { borderBottomColor: theme.border }, (s as { hovered?: boolean }).hovered && { backgroundColor: theme.backgroundElement }]}>
                 <View style={[styles.colName, styles.nameCell]}>
+                  <Pressable
+                    onPress={(e) => {
+                      (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+                      togglePick(c.id);
+                    }}
+                    style={[styles.checkBox, picked.has(c.id) && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
+                    {picked.has(c.id) && <Ionicons name="checkmark" size={12} color={theme.primaryText} />}
+                  </Pressable>
                   <BrutalAvatar name={c.full_name} uri={c.avatar_url} size={38} />
                   <View style={{ flex: 1 }}>
                     <ThemedText style={styles.nameText} numberOfLines={1}>
@@ -263,9 +339,11 @@ export function CreatorDatabase() {
                 <View style={styles.colAcc}>
                   <AccountsCell links={links} />
                 </View>
-                <View style={[styles.colSm, styles.lvCell]}>
-                  <Image source={badgeFor(p?.level ?? 1).source} style={styles.lvBadge} contentFit="contain" />
-                  <ThemedText style={styles.cellNum}>{p?.level ?? 1}</ThemedText>
+                <View style={styles.colSm}>
+                  <View style={styles.lvBox}>
+                    <Image source={badgeFor(p?.level ?? 1).source} style={styles.lvBadgeBg} contentFit="contain" />
+                    <ThemedText style={[styles.lvNum, { color: badgeFor(p?.level ?? 1).color }]}>{p?.level ?? 1}</ThemedText>
+                  </View>
                 </View>
                 <View style={styles.colSm}>
                   <View style={[styles.statusPill, { backgroundColor: c.disabled ? theme.danger : theme.success }]}>
@@ -295,6 +373,202 @@ function parseHandle(line: string): { platform: string | null; username: string 
     return { platform, username: username.toLowerCase() };
   }
   return { platform: null, username: s.replace('@', '').toLowerCase() };
+}
+
+/** A manually-added creator who hasn't signed up yet — shows the invite code. */
+function PendingRow({ pc }: { pc: PendingCreator }) {
+  const theme = useTheme();
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (Platform.OS === 'web') (navigator as unknown as { clipboard?: { writeText: (s: string) => void } }).clipboard?.writeText(pc.invite_code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <View style={[styles.tr, { borderBottomColor: theme.border }]}>
+      <View style={[styles.colName, styles.nameCell]}>
+        <View style={[styles.invitedAvatar, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+          <Ionicons name="hourglass-outline" size={18} color={theme.textSecondary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <ThemedText style={styles.nameText} numberOfLines={1}>
+            {pc.full_name}
+          </ThemedText>
+          <View style={styles.statusRow}>
+            <View style={[styles.dot, { backgroundColor: theme.accent }]} />
+            <ThemedText type="small" themeColor="textSecondary">
+              invited · not claimed
+            </ThemedText>
+          </View>
+        </View>
+      </View>
+      <View style={styles.colActivity} />
+      <View style={styles.colTrend} />
+      <View style={styles.colAcc}>
+        <Pressable onPress={copy} style={[styles.codeChip, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+          <ThemedText style={styles.codeText}>{pc.invite_code}</ThemedText>
+          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+      <View style={styles.colSm} />
+      <View style={styles.colSm}>
+        <View style={[styles.statusPill, { backgroundColor: theme.accent }]}>
+          <ThemedText style={[styles.statusPillText, { color: '#1A1A1A' }]}>INVITED</ThemedText>
+        </View>
+      </View>
+      <Pressable onPress={() => deletePendingCreator(pc.id)} style={styles.colChevron} hitSlop={8}>
+        <Ionicons name="close" size={16} color={theme.textSecondary} />
+      </Pressable>
+    </View>
+  );
+}
+
+/** Admin: add a creator — pick from the ViewTrack creator list or type a name. */
+function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const theme = useTheme();
+  const [vtCreators, setVtCreators] = useState<VtCreator[]>([]);
+  const [loadingVt, setLoadingVt] = useState(true);
+  const [search, setSearch] = useState('');
+  const [manual, setManual] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setLoadingVt(true);
+    vtListCreators().then((c) => {
+      setVtCreators(c);
+      setLoadingVt(false);
+    });
+  }, [visible]);
+
+  function reset() {
+    setName('');
+    setCode(null);
+    setCopied(false);
+    setBusy(false);
+    setManual(false);
+    setSearch('');
+    onClose();
+  }
+  async function add(creatorName: string) {
+    if (!creatorName.trim() || busy) return;
+    setBusy(true);
+    const r = await addPendingCreator(creatorName.trim());
+    setBusy(false);
+    if (r.code) {
+      setName(creatorName.trim());
+      setCode(r.code);
+    }
+  }
+  function copy() {
+    if (Platform.OS === 'web') (navigator as unknown as { clipboard?: { writeText: (s: string) => void } }).clipboard?.writeText(code ?? '');
+    setCopied(true);
+  }
+
+  const filtered = vtCreators.filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={reset}>
+      <Pressable style={styles.modalBackdrop} onPress={reset}>
+        <Pressable style={[styles.addModal, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
+          {code ? (
+            <>
+              <View style={[styles.addIcon, { backgroundColor: theme.success }]}>
+                <Ionicons name="checkmark" size={26} color="#fff" />
+              </View>
+              <ThemedText style={styles.addTitle}>{name} added</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                Share this invite code — when they sign up with it, they're linked to this creator and marked active.
+              </ThemedText>
+              <Pressable onPress={copy} style={[styles.bigCode, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+                <ThemedText style={styles.bigCodeText}>{code}</ThemedText>
+                <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={18} color={theme.text} />
+              </Pressable>
+              <Pressable onPress={reset} style={[styles.addBtn, { backgroundColor: theme.primary }]}>
+                <ThemedText style={[styles.addBtnText, { color: theme.primaryText }]}>Done</ThemedText>
+              </Pressable>
+            </>
+          ) : manual ? (
+            <>
+              <ThemedText style={styles.addTitle}>Add by name</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                They'll show as “invited” until they sign up with the code.
+              </ThemedText>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Creator name"
+                placeholderTextColor={theme.textSecondary}
+                style={[styles.addInput, { color: theme.text, borderColor: theme.border }]}
+                autoFocus
+              />
+              <Pressable onPress={() => add(name)} disabled={!name.trim() || busy} style={[styles.addBtn, { backgroundColor: name.trim() ? theme.primary : theme.backgroundElement }]}>
+                <ThemedText style={[styles.addBtnText, { color: name.trim() ? theme.primaryText : theme.textSecondary }]}>{busy ? 'Adding…' : 'Add creator'}</ThemedText>
+              </Pressable>
+              <Pressable onPress={() => setManual(false)}>
+                <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                  ← Pick from ViewTrack
+                </ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <ThemedText style={styles.addTitle}>Add a creator</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                Pick one from your ViewTrack creators.
+              </ThemedText>
+              <View style={[styles.searchWrap, { backgroundColor: theme.backgroundElement, borderColor: theme.border, flexGrow: 0, flexBasis: 'auto', alignSelf: 'stretch' }]}>
+                <Ionicons name="search" size={15} color={theme.textSecondary} />
+                <TextInput value={search} onChangeText={setSearch} placeholder="Search ViewTrack creators" placeholderTextColor={theme.textSecondary} style={[styles.search, { color: theme.text }]} />
+              </View>
+              {loadingVt ? (
+                <View style={{ alignSelf: 'stretch', gap: Spacing.two }}>
+                  <Skeleton height={48} radius={Radius.md} />
+                  <Skeleton height={48} radius={Radius.md} />
+                  <Skeleton height={48} radius={Radius.md} />
+                </View>
+              ) : (
+                <ScrollView style={styles.vtList} keyboardShouldPersistTaps="handled">
+                  {filtered.length === 0 ? (
+                    <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', paddingVertical: Spacing.three }}>
+                      {vtCreators.length === 0 ? 'No creators in ViewTrack yet.' : 'No matches.'}
+                    </ThemedText>
+                  ) : (
+                    filtered.map((c) => (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => add(c.name)}
+                        disabled={busy}
+                        style={({ pressed }) => [styles.vtRow, { borderColor: theme.border }, pressed && { backgroundColor: theme.backgroundElement }]}>
+                        <BrutalAvatar name={c.name} uri={c.avatarUrl} size={34} />
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={{ fontWeight: '800' }} numberOfLines={1}>
+                            {c.name}
+                          </ThemedText>
+                          <ThemedText type="small" themeColor="textSecondary">
+                            {c.accountCount} {c.accountCount === 1 ? 'account' : 'accounts'} · {compact(c.totalViews)} views
+                          </ThemedText>
+                        </View>
+                        <Ionicons name="add-circle" size={24} color={theme.primary} />
+                      </Pressable>
+                    ))
+                  )}
+                </ScrollView>
+              )}
+              <Pressable onPress={() => setManual(true)}>
+                <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                  + Add by name instead
+                </ThemedText>
+              </Pressable>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
 /** Admin: paste a list of handles/URLs → links them to a creator as a background job. */
@@ -391,7 +665,7 @@ function BulkAddAccounts({
           </Pressable>
           {pickOpen && (
             <View style={[styles.bulkList, { borderColor: theme.border, backgroundColor: theme.card }]}>
-              <View style={[styles.searchWrap, { backgroundColor: theme.backgroundElement, borderColor: theme.border, marginBottom: 4 }]}>
+              <View style={[styles.searchWrap, { backgroundColor: theme.backgroundElement, borderColor: theme.border, marginBottom: Spacing.one + 2, flexGrow: 0, flexBasis: 'auto', alignSelf: 'stretch' }]}>
                 <Ionicons name="search" size={15} color={theme.textSecondary} />
                 <TextInput value={creatorQuery} onChangeText={setCreatorQuery} placeholder="Search" placeholderTextColor={theme.textSecondary} style={[styles.search, { color: theme.text }]} />
               </View>
@@ -560,6 +834,20 @@ function CreatorDetail({
   const [loadingRec, setLoadingRec] = useState(true);
   const [playing, setPlaying] = useState<Recording | null>(null);
   const [tf, setTf] = useState<Timeframe>('7d');
+  const { totalPaid, payouts } = usePayouts(creator.id);
+  const [paying, setPaying] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncMsg, setResyncMsg] = useState<string | null>(null);
+  const [analyzeVid, setAnalyzeVid] = useState<VtVideo | null>(null);
+
+  async function resync() {
+    if (resyncing) return;
+    setResyncing(true);
+    const r = await vtRefreshCreator(creator.id);
+    setResyncing(false);
+    setResyncMsg(r.total === 0 ? 'No accounts' : `Synced ${r.refreshed}/${r.total} ✓`);
+    setTimeout(() => setResyncMsg(null), 5000);
+  }
   const level = prog?.level ?? view?.progress?.level ?? 1;
 
   useEffect(() => {
@@ -586,23 +874,19 @@ function CreatorDetail({
   const totalViews = accounts.reduce((s, a) => s + (a.totalViews ?? 0), 0);
   const totalVideos = accounts.reduce((s, a) => s + (a.totalVideos ?? 0), 0);
   const videosArr = view?.videos ?? [];
-  const topVideos = [...videosArr].sort((a, b) => b.views - a.views).slice(0, 12);
+  const topVideos = [...videosArr].sort((a, b) => b.views - a.views).slice(0, 200);
   // payout: $15/video + $100 per 100k views per video
   const perVideoPay = (v: VtVideo) => 15 + Math.floor((v.views ?? 0) / 100_000) * 100;
   const payout = videosArr.reduce((s, v) => s + perVideoPay(v), 0);
-  // weekly settlement — earnings since last Sunday are due this coming Sunday
-  const now = new Date();
-  const periodStart = new Date(now);
-  periodStart.setHours(0, 0, 0, 0);
-  periodStart.setDate(periodStart.getDate() - now.getDay());
-  const nextPayoutDate = new Date(periodStart);
-  nextPayoutDate.setDate(periodStart.getDate() + 7);
-  const periodStartTs = periodStart.getTime();
-  const nextPayout = videosArr
-    .filter((v) => v.uploadDate && new Date(v.uploadDate).getTime() >= periodStartTs)
-    .reduce((s, v) => s + perVideoPay(v), 0);
-  const paidOut = Math.max(0, payout - nextPayout);
-  const payoutDay = nextPayoutDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const owed = Math.max(0, payout - totalPaid);
+
+  async function payNow() {
+    if (owed <= 0 || paying) return;
+    if (Platform.OS === 'web' && !window.confirm(`Mark $${Math.round(owed).toLocaleString()} as paid to ${creator.full_name || 'this creator'}? This notifies them.`)) return;
+    setPaying(true);
+    await recordPayout(creator.id, owed, 'Payout');
+    setPaying(false);
+  }
 
   async function toggleAccess() {
     const next = !creator.disabled;
@@ -637,30 +921,48 @@ function CreatorDetail({
                 {creator.disabled ? 'access removed' : 'active'} · Lv {level} · {ago(lastActive)}
               </ThemedText>
             </View>
-            <Pressable
-              onPress={toggleAccess}
-              style={({ pressed }) => [styles.accessChip, { borderColor: creator.disabled ? theme.success : theme.danger }, pressed && { opacity: 0.6 }]}>
-              <Ionicons name={creator.disabled ? 'lock-open-outline' : 'remove-circle-outline'} size={14} color={creator.disabled ? theme.success : theme.danger} />
-              <ThemedText style={[styles.accessChipText, { color: creator.disabled ? theme.success : theme.danger }]}>
-                {creator.disabled ? 'Restore access' : 'Remove access'}
-              </ThemedText>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' }}>
+              <Pressable
+                onPress={toggleAccess}
+                style={({ pressed }) => [styles.accessChip, { borderColor: creator.disabled ? theme.success : theme.danger }, pressed && { opacity: 0.6 }]}>
+                <Ionicons name={creator.disabled ? 'lock-open-outline' : 'remove-circle-outline'} size={14} color={creator.disabled ? theme.success : theme.danger} />
+                <ThemedText style={[styles.accessChipText, { color: creator.disabled ? theme.success : theme.danger }]}>
+                  {creator.disabled ? 'Restore access' : 'Remove access'}
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={resync}
+                disabled={resyncing}
+                style={({ pressed }) => [styles.accessChip, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
+                <Ionicons name="cloud-download-outline" size={14} color={theme.text} />
+                <ThemedText style={[styles.accessChipText, { color: theme.text }]}>{resyncing ? 'Syncing…' : resyncMsg ?? 'Re-sync accounts'}</ThemedText>
+              </Pressable>
+            </View>
           </View>
         </BrutalCard>
 
-        <BrutalCard style={[styles.payoutCard, styles.flexCard, { backgroundColor: theme.success, borderColor: theme.border }]} shadow={4}>
+        <BrutalCard style={[styles.payoutCard, styles.flexCard, { backgroundColor: owed > 0 ? theme.primary : theme.success, borderColor: theme.border }]} shadow={4}>
           <View style={styles.payoutTop}>
-            <ThemedText style={styles.payoutLabel}>DUE NEXT PAYMENT · by {payoutDay}</ThemedText>
+            <ThemedText style={styles.payoutLabel}>{owed > 0 ? 'OWED — UNPAID' : 'ALL SETTLED'}</ThemedText>
             <Ionicons name="cash" size={26} color="rgba(255,255,255,0.85)" />
           </View>
           {loadingV ? (
             <Skeleton width={120} height={38} radius={Radius.sm} style={{ backgroundColor: 'rgba(255,255,255,0.35)', marginVertical: 4 }} />
           ) : (
-            <ThemedText style={styles.payoutValue}>${nextPayout.toLocaleString()}</ThemedText>
+            <ThemedText style={styles.payoutValue}>${owed.toLocaleString()}</ThemedText>
           )}
           <ThemedText style={styles.payoutSub}>
-            ${paidOut.toLocaleString()} paid out · ${payout.toLocaleString()} lifetime
+            ${totalPaid.toLocaleString()} paid ({payouts.length}) · ${payout.toLocaleString()} earned
           </ThemedText>
+          {owed > 0 && (
+            <Pressable
+              onPress={payNow}
+              disabled={paying}
+              style={({ pressed }) => [styles.payNowBtn, { backgroundColor: '#fff', borderColor: theme.border }, pressed && { opacity: 0.85 }]}>
+              <Ionicons name="cash" size={16} color="#111" />
+              <ThemedText style={styles.payNowText}>{paying ? 'Paying…' : `Mark $${Math.round(owed).toLocaleString()} paid`}</ThemedText>
+            </Pressable>
+          )}
         </BrutalCard>
       </View>
 
@@ -706,7 +1008,7 @@ function CreatorDetail({
             No videos yet.
           </ThemedText>
         ) : (
-          topVideos.map((v) => <VideoTile key={v.id} video={v} />)
+          topVideos.map((v) => <VideoTile key={v.id} video={v} onPress={() => setAnalyzeVid(v)} />)
         )}
       </ScrollView>
 
@@ -763,14 +1065,16 @@ function CreatorDetail({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {analyzeVid && <AnalyzeModal video={analyzeVid} onClose={() => setAnalyzeVid(null)} />}
     </ScrollView>
   );
 }
 
-function VideoTile({ video }: { video: VtVideo }) {
+function VideoTile({ video, onPress }: { video: VtVideo; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <View style={[styles.vTile, { borderColor: theme.border }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.vTile, { borderColor: theme.border }, pressed && { opacity: 0.8 }]}>
       {video.thumbnail ? (
         <Image source={{ uri: video.thumbnail }} style={styles.vThumb} contentFit="cover" />
       ) : (
@@ -778,22 +1082,173 @@ function VideoTile({ video }: { video: VtVideo }) {
           <Ionicons name="film-outline" size={22} color={theme.textSecondary} />
         </View>
       )}
+      <View style={[styles.analyzeBadge, { backgroundColor: theme.primary, borderColor: theme.card }]}>
+        <Ionicons name="sparkles" size={12} color={theme.primaryText} />
+      </View>
       <View style={styles.vMeta}>
         <Ionicons name="eye" size={13} color={theme.textSecondary} />
         <ThemedText type="small" themeColor="textSecondary">
           {compact(video.views)}
         </ThemedText>
       </View>
-    </View>
+    </Pressable>
+  );
+}
+
+/** Inline AI analysis for a creator's video — stays in the shell (sidebar present). */
+export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () => void }) {
+  const theme = useTheme();
+  const { isAdmin } = useAuth();
+  const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getVideoAnalysis(video.id).then((r) => {
+      if (!active) return;
+      setAnalysis(r?.analysis ?? null);
+      setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [video.id]);
+
+  async function run(force: boolean) {
+    if (analyzing) return;
+    setAnalyzing(true);
+    setErr(null);
+    const r = await vtAnalyzeVideo(video.id, force);
+    setAnalyzing(false);
+    if (r.ok) setAnalysis(r.analysis ?? null);
+    else setErr(r.error ?? 'Still processing — try again in a moment.');
+  }
+
+  const blocks: { label: string; text?: string; tint: string }[] = [
+    { label: 'Hook', text: analysis?.hook, tint: theme.accent },
+    { label: 'Summary', text: analysis?.summary, tint: theme.textSecondary },
+    { label: 'What worked', text: analysis?.whatWorked, tint: theme.success },
+    { label: 'Suggestions', text: analysis?.suggestions, tint: theme.primary },
+  ];
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={[styles.analyzeModal, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
+          <View style={styles.analyzeTop}>
+            {video.thumbnail ? (
+              <Image source={{ uri: video.thumbnail }} style={styles.analyzeThumb} contentFit="cover" />
+            ) : (
+              <View style={[styles.analyzeThumb, { backgroundColor: theme.backgroundElement }]} />
+            )}
+            <View style={{ flex: 1 }}>
+              <ThemedText style={{ fontWeight: '900', fontSize: 16 }} numberOfLines={1}>
+                @{video.accountUsername || 'video'}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {compact(video.views)} views · {video.platform}
+              </ThemedText>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={24} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: Spacing.two, paddingVertical: Spacing.two }}>
+            {loading ? (
+              <Skeleton height={80} radius={Radius.md} />
+            ) : analyzing ? (
+              <View style={{ alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four }}>
+                <ActivityIndicator color={theme.primary} />
+                <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                  Analyzing with Gemini… first run can take up to ~3 min.
+                </ThemedText>
+              </View>
+            ) : analysis ? (
+              <>
+                {blocks
+                  .filter((b) => !!b.text)
+                  .map((b) => (
+                    <View key={b.label} style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                      <ThemedText style={[styles.aiBlkLabel, { color: b.tint }]}>{b.label.toUpperCase()}</ThemedText>
+                      <ThemedText style={styles.aiBlkText}>{b.text}</ThemedText>
+                    </View>
+                  ))}
+                {(!!analysis.tone || !!analysis.pacing || !!analysis.topics?.length) && (
+                  <View style={styles.aiChipRow}>
+                    {!!analysis.tone && <View style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>tone: {analysis.tone}</ThemedText></View>}
+                    {!!analysis.pacing && <View style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>pacing: {analysis.pacing}</ThemedText></View>}
+                    {(analysis.topics ?? []).map((t) => (
+                      <View key={t} style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>{t}</ThemedText></View>
+                    ))}
+                  </View>
+                )}
+                {!!analysis.transcript?.length && (
+                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <Pressable onPress={() => setShowTranscript((s) => !s)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <ThemedText style={[styles.aiBlkLabel, { color: theme.textSecondary }]}>TRANSCRIPT</ThemedText>
+                      <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+                    </Pressable>
+                    {showTranscript &&
+                      analysis.transcript!.map((seg, i) => (
+                        <ThemedText key={i} type="small" themeColor="textSecondary">
+                          {typeof seg.start === 'number' ? `[${Math.floor(seg.start)}s] ` : ''}
+                          {seg.text}
+                        </ThemedText>
+                      ))}
+                  </View>
+                )}
+              </>
+            ) : (
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', paddingVertical: Spacing.three }}>
+                {isAdmin ? 'Not analyzed yet — run an AI breakdown below.' : 'No AI breakdown yet.'}
+              </ThemedText>
+            )}
+            {!!err && (
+              <ThemedText type="small" themeColor="danger" style={{ textAlign: 'center' }}>
+                {err}
+              </ThemedText>
+            )}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+            {!!video.url && (
+              <Pressable onPress={() => Linking.openURL(video.url)} style={[styles.addBtn, { flex: 1, backgroundColor: theme.card, borderWidth: Border.width, borderColor: theme.border }]}>
+                <Ionicons name="open-outline" size={16} color={theme.text} />
+                <ThemedText style={[styles.addBtnText, { color: theme.text }]}> Open</ThemedText>
+              </Pressable>
+            )}
+            {isAdmin && (
+              <Pressable onPress={() => run(!!analysis)} disabled={analyzing} style={[styles.addBtn, { flex: 1.4, flexDirection: 'row', backgroundColor: theme.primary }]}>
+                <Ionicons name="sparkles" size={16} color={theme.primaryText} />
+                <ThemedText style={[styles.addBtnText, { color: theme.primaryText }]}> {analyzing ? 'Analyzing…' : analysis ? 'Re-analyze' : 'Analyze with AI'}</ThemedText>
+              </Pressable>
+            )}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  dbScroll: { padding: Spacing.four, gap: Spacing.three, maxWidth: 1320, width: '100%', alignSelf: 'center' },
+  dbScroll: { padding: Spacing.four, gap: Spacing.three, width: '100%' },
+  analyzeBadge: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  analyzeModal: { width: '100%', maxWidth: 460, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  analyzeTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  analyzeThumb: { width: 44, height: 56, borderRadius: Radius.sm },
+  aiBlk: { gap: 4, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
+  aiBlkLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  aiBlkText: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  aiChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  aiChip: { paddingHorizontal: Spacing.two, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1.5 },
   dbHead: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.three },
   dbTitle: { fontSize: 30, lineHeight: 38, fontWeight: '900' },
-  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one + 2, height: 40, paddingHorizontal: Spacing.three, borderRadius: Radius.full, borderWidth: Border.width },
+  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one + 2, height: 40, paddingHorizontal: Spacing.three, borderRadius: Radius.sm, borderWidth: Border.width },
   refreshText: { fontSize: 14, fontWeight: '800' },
 
   statRow: { flexDirection: 'row', gap: Spacing.three, flexWrap: 'wrap' },
@@ -808,9 +1263,9 @@ const styles = StyleSheet.create({
   payoutBreakText: { fontSize: 13, fontWeight: '700', color: '#fff', opacity: 0.95 },
 
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  searchWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.two, height: 44, paddingHorizontal: Spacing.three, borderRadius: Radius.full, borderWidth: Border.width },
+  searchWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.two, height: 44, paddingHorizontal: Spacing.three, borderRadius: Radius.sm, borderWidth: Border.width },
   search: { flex: 1, fontSize: 15, outlineStyle: 'none' } as object,
-  filterPill: { height: 40, paddingHorizontal: Spacing.three, borderRadius: Radius.full, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center' },
+  filterPill: { height: 40, paddingHorizontal: Spacing.three, borderRadius: Radius.sm, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center' },
   filterText: { fontSize: 14, fontWeight: '800' },
 
   table: { padding: 0 },
@@ -848,11 +1303,34 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   accChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: Spacing.two, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5 },
-  lvCell: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  lvBadge: { width: 22, height: 22 },
+  lvBox: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  lvBadgeBg: { position: 'absolute', top: 0, left: 0, width: 40, height: 40, opacity: 0.32 },
+  lvNum: { fontSize: 20, fontWeight: '900', textAlign: 'center', lineHeight: 40, includeFontPadding: false } as object,
   cellNum: { fontSize: 15, fontWeight: '800' },
   statusPill: { paddingHorizontal: Spacing.two, paddingVertical: 2, borderRadius: Radius.full },
   statusPillText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+  checkBox: { width: 20, height: 20, borderRadius: Radius.sm, borderWidth: 2, borderColor: '#9CA3AF', alignItems: 'center', justifyContent: 'center' },
+  invitedAvatar: { width: 38, height: 38, borderRadius: 19, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center' },
+  codeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two, paddingVertical: 5, borderRadius: Radius.full, borderWidth: Border.width, alignSelf: 'flex-start' },
+  codeText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
+  syncBanner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
+  resyncChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 30, borderRadius: Radius.sm, borderWidth: 1.5, alignSelf: 'flex-start' },
+  resyncText: { fontSize: 12, fontWeight: '800' },
+  selBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
+  selBarText: { flex: 1, fontSize: 14, fontWeight: '900', paddingLeft: Spacing.one },
+  selBarBtn: { paddingHorizontal: Spacing.three, height: 34, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  selBarBtnText: { fontSize: 13, fontWeight: '900', color: '#fff' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
+  addModal: { width: '100%', maxWidth: 400, alignItems: 'center', gap: Spacing.three, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  addTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  addInput: { alignSelf: 'stretch', height: 50, borderRadius: Radius.md, borderWidth: Border.width, paddingHorizontal: Spacing.three, fontSize: 16, fontWeight: '700', outlineStyle: 'none' } as object,
+  addBtn: { alignSelf: 'stretch', height: 50, borderRadius: Radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  addBtnText: { fontSize: 15, fontWeight: '900' },
+  addIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
+  bigCode: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, alignSelf: 'stretch', height: 56, borderRadius: Radius.md, borderWidth: Border.widthThick },
+  bigCodeText: { fontSize: 22, fontWeight: '900', letterSpacing: 2 },
+  vtList: { alignSelf: 'stretch', maxHeight: 300 },
+  vtRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width, marginBottom: Spacing.one + 2 },
 
   // detail
   detailScroll: { padding: Spacing.four, gap: Spacing.three, maxWidth: 920, width: '100%', alignSelf: 'center' },
@@ -867,11 +1345,13 @@ const styles = StyleSheet.create({
   flexCard: { flex: 1, minWidth: 260 },
   payoutTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   payoutSub: { fontSize: 12, fontWeight: '700', color: '#fff', opacity: 0.92 },
+  payNowBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: Spacing.two, height: 40, borderRadius: Radius.full, borderWidth: Border.width },
+  payNowText: { fontSize: 14, fontWeight: '900', color: '#111' },
   accessChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: Spacing.two, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5, marginTop: 2 },
   accessChipText: { fontSize: 12, fontWeight: '800' },
   perfHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, marginTop: Spacing.two, flexWrap: 'wrap' },
   tfRow: { flexDirection: 'row', gap: 5 },
-  tfPill: { paddingHorizontal: Spacing.two + 2, paddingVertical: 5, borderRadius: Radius.full, borderWidth: 1.5 },
+  tfPill: { paddingHorizontal: Spacing.two + 2, paddingVertical: 5, borderRadius: Radius.sm, borderWidth: 1.5 },
   tfText: { fontSize: 12, fontWeight: '800' },
   slider: { gap: Spacing.three, paddingVertical: Spacing.one, paddingRight: Spacing.three },
   sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '900', marginTop: Spacing.two },

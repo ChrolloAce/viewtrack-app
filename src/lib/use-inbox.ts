@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useBlocks } from '@/lib/blocks';
 import { supabase } from '@/lib/supabase';
 
 let inboxSeq = 0;
@@ -77,5 +78,12 @@ export function useInbox() {
     };
   }, [load]);
 
-  return { items, loading, reload: load };
+  // Hide direct conversations with anyone the viewer has blocked.
+  const { blocked } = useBlocks();
+  const visible = useMemo(
+    () => items.filter((it) => !(it.type === 'direct' && it.customer && blocked.has(it.customer.id))),
+    [items, blocked],
+  );
+
+  return { items: visible, loading, reload: load };
 }

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalCard } from '@/components/brutal';
@@ -43,6 +43,7 @@ export default function DayDetail() {
     };
   }, [profileId]);
   const videos = profileId ? creatorVideos ?? [] : myVideos;
+  const loading = !!profileId && creatorVideos === null;
 
   // parse "YYYY-MM-DD" as a local date; the window is [start, start + span days)
   const [y, m, d] = (date ?? '').split('-').map((n) => parseInt(n, 10));
@@ -87,7 +88,14 @@ export default function DayDetail() {
             </ThemedText>
           </BrutalCard>
 
-          {dayVideos.length === 0 ? (
+          {loading ? (
+            <BrutalCard style={styles.empty}>
+              <ActivityIndicator color={theme.primary} />
+              <ThemedText type="small" themeColor="textSecondary">
+                Loading videos…
+              </ThemedText>
+            </BrutalCard>
+          ) : dayVideos.length === 0 ? (
             <BrutalCard style={styles.empty}>
               <Ionicons name="film-outline" size={28} color={theme.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary">

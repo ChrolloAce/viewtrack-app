@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalCard } from '@/components/brutal';
+import { DesktopFrame } from '@/components/desktop-frame';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Border, brutalShadow, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -25,6 +26,7 @@ export default function LevelsScreen() {
   const { levels, levelNum, current, next, xp, pct, xpToNext } = useProgress();
 
   return (
+    <DesktopFrame active="profile">
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
@@ -129,6 +131,7 @@ export default function LevelsScreen() {
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
+    </DesktopFrame>
   );
 }
 

@@ -24,7 +24,9 @@ export function XpBar({ height = 14, color }: { height?: number; color?: string 
   const barColor = color ?? current?.color ?? theme.primary;
 
   useEffect(() => {
-    if (!uid || loading) return;
+    // Wait until levels actually resolve — `current` is null until the levels
+    // table loads, and animating before then leaves the bar stuck (falsely full).
+    if (!uid || loading || !current) return;
     const key = `xp.lastSeen.${uid}`;
     let active = true;
     (async () => {
@@ -57,8 +59,8 @@ export function XpBar({ height = 14, color }: { height?: number; color?: string 
     return () => {
       active = false;
     };
-    // re-run whenever the live XP value changes
-  }, [uid, xp, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+    // re-run on XP change AND when levels resolve (pct goes null→real value)
+  }, [uid, xp, loading, current, pct]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const width = fill.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'], extrapolate: 'clamp' });
 

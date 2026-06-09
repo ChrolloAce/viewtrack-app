@@ -2,10 +2,12 @@ import { DefaultTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Alert, View } from 'react-native';
 
+import { EarningsHost } from '@/components/earnings-overlay';
 import { LevelUpHost } from '@/components/level-up-overlay';
 import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { registerForPush, usePushTapNavigation } from '@/lib/push';
+import { useEarningsWatch } from '@/lib/use-earnings-watch';
 import { supabase } from '@/lib/supabase';
 
 function RootNavigator() {
@@ -16,6 +18,9 @@ function RootNavigator() {
 
   // Tapping a push notification opens the conversation.
   usePushTapNavigation();
+
+  // Watch for new view-bonus milestones since last open → money celebration.
+  useEarningsWatch();
 
   // Register this device for push once signed in.
   useEffect(() => {
@@ -94,6 +99,7 @@ function RootNavigator() {
           <Stack.Screen name="teleprompter/[id]" options={{ presentation: 'fullScreenModal' }} />
         </Stack>
         <LevelUpHost />
+        <EarningsHost />
       </View>
     </ThemeProvider>
   );

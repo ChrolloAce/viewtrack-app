@@ -16,6 +16,7 @@ import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { badgeFor } from '@/lib/badges';
+import { usePayouts } from '@/lib/payouts';
 import { useProgress } from '@/lib/use-progress';
 import { useStats } from '@/lib/use-stats';
 import type { VtVideo } from '@/lib/viewtrack';
@@ -52,10 +53,11 @@ export default function StatsScreen() {
   const isDesktop = useIsDesktop();
   const theme = useTheme();
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { levelNum, current } = useProgress();
-  const { loading, accounts, videos, totalFollowing, totalViews, totalVideos, paidOut, nextPayout, nextPayoutDate, payoutLogs, connected } = useStats();
-  const payoutDay = nextPayoutDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const { loading, accounts, videos, totalFollowing, totalViews, totalVideos, payout, connected } = useStats();
+  const { totalPaid, payouts } = usePayouts(session?.user?.id ?? null);
+  const owed = Math.max(0, payout - totalPaid);
   const [tf, setTf] = useState<Timeframe>('all');
   const [ddOpen, setDdOpen] = useState(false);
 
@@ -107,26 +109,26 @@ export default function StatsScreen() {
               {loading ? (
                 <Skeleton width={90} height={34} radius={Radius.sm} style={styles.skelOnPrimary} />
               ) : (
-                <ThemedText style={styles.miniValue}>${paidOut.toLocaleString()}</ThemedText>
+                <ThemedText style={styles.miniValue}>${totalPaid.toLocaleString()}</ThemedText>
               )}
               <ThemedText style={styles.miniSub}>
-                {payoutLogs.length} {payoutLogs.length === 1 ? 'payment' : 'payments'}
+                {payouts.length} {payouts.length === 1 ? 'payment' : 'payments'}
               </ThemedText>
             </Pressable>
 
             <Pressable
-              onPress={() => router.push({ pathname: '/payout-breakdown', params: { mode: 'next' } })}
+              onPress={() => router.push({ pathname: '/payout-breakdown', params: { mode: 'owed' } })}
               style={({ pressed }) => [styles.payoutMini, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 4), pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
               <View style={styles.miniTop}>
-                <ThemedText style={[styles.miniLabel, { color: theme.primaryText }]}>next payout</ThemedText>
+                <ThemedText style={[styles.miniLabel, { color: theme.primaryText }]}>owed to you</ThemedText>
                 <Ionicons name="chevron-forward" size={14} color={theme.primaryText} />
               </View>
               {loading ? (
                 <Skeleton width={80} height={34} radius={Radius.sm} style={styles.skelOnPrimary} />
               ) : (
-                <ThemedText style={[styles.miniValue, { color: theme.primaryText }]}>${nextPayout.toLocaleString()}</ThemedText>
+                <ThemedText style={[styles.miniValue, { color: theme.primaryText }]}>${owed.toLocaleString()}</ThemedText>
               )}
-              <ThemedText style={[styles.miniSub, { color: theme.primaryText }]}>by {payoutDay}</ThemedText>
+              <ThemedText style={[styles.miniSub, { color: theme.primaryText }]}>${payout.toLocaleString()} earned lifetime</ThemedText>
             </Pressable>
           </View>
 

@@ -122,7 +122,9 @@ export function useProgress() {
   const next = levels.find((l) => l.level === levelNum + 1) ?? null;
   const floor = current?.xp_required ?? 0;
   const ceil = next?.xp_required ?? floor;
-  const pct = next ? Math.max(0, Math.min(1, (xp - floor) / Math.max(1, ceil - floor))) : 1;
+  // Full (1) only at genuine max level; empty (0) while levels are still loading
+  // (no `current` yet) so the bar never flashes falsely full.
+  const pct = next ? Math.max(0, Math.min(1, (xp - floor) / Math.max(1, ceil - floor))) : current ? 1 : 0;
   const xpToNext = next ? Math.max(0, ceil - xp) : 0;
 
   return { loading, levels, progress, xp, levelNum, current, next, pct, xpToNext };

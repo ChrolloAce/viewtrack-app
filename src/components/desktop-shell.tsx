@@ -2,16 +2,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { BrutalAvatar } from '@/components/brutal';
 import { CreatorDatabase } from '@/components/creator-database';
 import { RequestsAdmin } from '@/app/(tabs)/requests';
 import { BrutalCard } from '@/components/brutal';
+import { DesktopRail, type Section } from '@/components/desktop-rail';
 import { ChatThread } from '@/components/chat-thread';
 import { JobManager } from '@/components/job-manager';
 import { LeaderboardView } from '@/components/leaderboard-view';
+import { PayoutsAdmin } from '@/components/payouts-admin';
+import { ReportsAdmin } from '@/components/reports-admin';
+import { VideosGrid } from '@/components/videos-grid';
+import { LinkClicks } from '@/components/link-clicks';
 import { ProfileBody } from '@/components/profile-body';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ViewsBreakdown } from '@/components/views-breakdown';
 import { XpBar } from '@/components/xp-bar';
@@ -20,6 +26,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { badgeFor } from '@/lib/badges';
 import { JobsProvider } from '@/lib/jobs';
+import { usePayouts } from '@/lib/payouts';
 import { pickImages, uploadLocalImage } from '@/lib/chat-media';
 import { supabase } from '@/lib/supabase';
 import { useCompletions } from '@/lib/use-completions';
@@ -28,6 +35,7 @@ import { useProgress } from '@/lib/use-progress';
 import { useScripts, type Script } from '@/lib/use-scripts';
 import { useStats } from '@/lib/use-stats';
 import { useUnread } from '@/lib/use-unread';
+import { takePendingSection } from '@/lib/nav';
 import type { VtVideo } from '@/lib/viewtrack';
 
 function compact(n: number) {
@@ -37,7 +45,6 @@ function compact(n: number) {
 }
 
 const DIVIDER = 'rgba(0,0,0,0.08)';
-type Section = 'home' | 'record' | 'chat' | 'creators' | 'requests' | 'leaderboard' | 'profile';
 type Sel = { id: string; name: string; avatar?: string | null; type: string };
 type Profile = { id: string; full_name: string | null; avatar_url: string | null };
 
@@ -65,10 +72,63 @@ function describe(item: InboxItem, userId: string | null, agent?: { full_name: s
   };
 }
 
+/** WhatsApp-style last-message preview (matches the mobile chat list). */
+function previewOf(item: InboxItem, userId: string | null): string {
+  let text = item.last_body?.trim() ?? '';
+  if (!text && item.last_attachment) {
+    text = item.last_attachment.startsWith('audio') ? '🎤 Voice message' : '📷 Photo';
+  }
+  if (!text) return item.subject ?? 'No messages yet';
+  if (item.type === 'group' && item.last_sender_id) {
+    const who = item.last_sender_id === userId ? 'You' : item.last_sender_name?.split(' ')[0] ?? '';
+    if (who) return `${who}: ${text}`;
+  }
+  return text;
+}
+
 export function DesktopShell() {
+  const { loading, profile } = useAuth();
+  // Don't render the shell until the role is known — otherwise it flashes the
+  // creator layout, then snaps to admin once the profile resolves.
+  if (loading || !profile) return <ShellSkeleton />;
+  return <ShellBody />;
+}
+
+function ShellSkeleton() {
+  const theme = useTheme();
+  return (
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <View style={[styles.rail, { backgroundColor: theme.card, borderRightColor: DIVIDER }]}>
+        <View style={styles.railBrand}>
+          <Skeleton width={38} height={38} radius={Radius.md} />
+          <Skeleton width={110} height={20} radius={Radius.sm} />
+        </View>
+        <View style={{ height: Spacing.four }} />
+        <View style={{ gap: Spacing.two }}>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} height={44} radius={Radius.md} />
+          ))}
+        </View>
+      </View>
+      <View style={[styles.flex, { padding: Spacing.five, gap: Spacing.three }]}>
+        <Skeleton width={240} height={34} radius={Radius.sm} />
+        <View style={{ flexDirection: 'row', gap: Spacing.three }}>
+          <Skeleton width={220} height={110} radius={Radius.lg} />
+          <Skeleton width={220} height={110} radius={Radius.lg} />
+        </View>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} height={64} radius={Radius.lg} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ShellBody() {
   const theme = useTheme();
   const { isAdmin } = useAuth();
-  const [section, setSection] = useState<Section>(isAdmin ? 'chat' : 'home');
+  // A rail tap from a detail screen routes here with a requested section.
+  const [section, setSection] = useState<Section>(takePendingSection() ?? (isAdmin ? 'chat' : 'home'));
   return (
     <JobsProvider>
       <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -77,12 +137,32 @@ export function DesktopShell() {
         {section === 'record' && !isAdmin && <RecordPane />}
         {section === 'chat' && <ChatConsole />}
         {section === 'creators' && isAdmin && <CreatorDatabase />}
+        {section === 'videos' && isAdmin && (
+          <View style={styles.flex}>
+            <VideosGrid />
+          </View>
+        )}
+        {section === 'clicks' && isAdmin && (
+          <View style={styles.flex}>
+            <LinkClicks />
+          </View>
+        )}
         {section === 'requests' && isAdmin && (
           <View style={styles.flex}>
             <RequestsAdmin bottomInset={24} />
           </View>
         )}
         {section === 'leaderboard' && <LeaderboardPane />}
+        {section === 'payouts' && isAdmin && (
+          <View style={styles.flex}>
+            <PayoutsAdmin />
+          </View>
+        )}
+        {section === 'reports' && isAdmin && (
+          <View style={styles.flex}>
+            <ReportsAdmin />
+          </View>
+        )}
         {section === 'profile' && <ProfilePane />}
         {/* persistent floating job tracker — survives section switches */}
         <JobManager />
@@ -124,7 +204,6 @@ function Pane({
 }
 
 function Rail({ section, setSection, isAdmin }: { section: Section; setSection: (s: Section) => void; isAdmin: boolean }) {
-  const theme = useTheme();
   const { profile } = useAuth();
   const [pending, setPending] = useState(0);
 
@@ -147,74 +226,7 @@ function Rail({ section, setSection, isAdmin }: { section: Section; setSection: 
     };
   }, [isAdmin]);
 
-  const items: { key: Section; icon: string; label: string; badge?: number }[] = isAdmin
-    ? [
-        { key: 'chat', icon: 'chatbubble-ellipses', label: 'Community' },
-        { key: 'creators', icon: 'people', label: 'Creators' },
-        { key: 'requests', icon: 'download', label: 'Requests', badge: pending },
-        { key: 'leaderboard', icon: 'trophy', label: 'Leaderboard' },
-      ]
-    : [
-        { key: 'home', icon: 'grid', label: 'Home' },
-        { key: 'record', icon: 'videocam', label: 'Record' },
-        { key: 'chat', icon: 'chatbubble-ellipses', label: 'Chats' },
-        { key: 'leaderboard', icon: 'trophy', label: 'Leaderboard' },
-      ];
-
-  return (
-    <View style={[styles.rail, { backgroundColor: theme.card, borderRightColor: DIVIDER }]}>
-      <View style={styles.railBrand}>
-        <Image source={require('../../assets/images/app-logo.png')} style={styles.railLogo} contentFit="contain" />
-        <ThemedText style={styles.railBrandText}>ViewTrack</ThemedText>
-      </View>
-
-      <ThemedText style={styles.railSection}>MENU</ThemedText>
-      <View style={styles.railItems}>
-        {items.map((it) => {
-          const active = section === it.key;
-          return (
-            <Pressable
-              key={it.key}
-              onPress={() => setSection(it.key)}
-              style={({ pressed }) => [
-                styles.railBtn,
-                active && { backgroundColor: theme.primaryMuted },
-                pressed && !active && { backgroundColor: theme.backgroundElement },
-              ]}>
-              <Ionicons name={(active ? it.icon : `${it.icon}-outline`) as never} size={20} color={active ? theme.primary : theme.textSecondary} />
-              <ThemedText style={[styles.railLabel, { color: active ? theme.primary : theme.text }]} numberOfLines={1}>
-                {it.label}
-              </ThemedText>
-              {!!it.badge && it.badge > 0 && (
-                <View style={[styles.railBadge, { backgroundColor: theme.danger }]}>
-                  <ThemedText style={styles.railBadgeText}>{it.badge > 99 ? '99+' : it.badge}</ThemedText>
-                </View>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Pressable
-        onPress={() => setSection('profile')}
-        style={({ pressed }) => [
-          styles.railUser,
-          { borderTopColor: DIVIDER },
-          section === 'profile' && { backgroundColor: theme.primaryMuted },
-          pressed && section !== 'profile' && { backgroundColor: theme.backgroundElement },
-        ]}>
-        <BrutalAvatar name={profile?.full_name} uri={profile?.avatar_url} size={36} />
-        <View style={{ flex: 1 }}>
-          <ThemedText style={styles.railUserName} numberOfLines={1}>
-            {profile?.full_name || 'Profile'}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-            {isAdmin ? 'Admin' : 'Creator'}
-          </ThemedText>
-        </View>
-      </Pressable>
-    </View>
-  );
+  return <DesktopRail active={section} onSelect={setSection} isAdmin={isAdmin} profile={profile} pending={pending} />;
 }
 
 function ChatConsole() {
@@ -269,7 +281,15 @@ function ChatConsole() {
       <View style={[styles.chatPane, { backgroundColor: theme.backgroundElement }]}>
         {selected ? (
           members && selected.type === 'group' ? (
-            <MembersPanel conversationId={selected.id} name={selected.name} onClose={() => setMembers(false)} />
+            <MembersPanel
+              conversationId={selected.id}
+              name={selected.name}
+              onClose={() => setMembers(false)}
+              onDeleted={() => {
+                setMembers(false);
+                setSelected(null);
+              }}
+            />
           ) : (
             <>
               <View style={[styles.chatHeader, { backgroundColor: theme.card, borderBottomColor: DIVIDER }]}>
@@ -395,7 +415,7 @@ function ConversationList({
                   {d.name}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                  {d.sub}
+                  {previewOf(item, userId)}
                 </ThemedText>
               </View>
               <View style={styles.rowMeta}>
@@ -555,14 +575,22 @@ function MembersPanel({
   conversationId,
   name,
   onClose,
+  onDeleted,
 }: {
   conversationId: string;
   name: string;
   onClose: () => void;
+  onDeleted: () => void;
 }) {
   const theme = useTheme();
-  const { session } = useAuth();
+  const { session, isAdmin } = useAuth();
   const userId = session?.user?.id ?? null;
+
+  async function deleteGroup() {
+    if (Platform.OS === 'web' && !window.confirm(`Delete "${name}"? This permanently removes the channel and all its messages for everyone.`)) return;
+    await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)('delete_group', { p_conversation: conversationId });
+    onDeleted();
+  }
   const [members, setMembers] = useState<Member[]>([]);
   const [creators, setCreators] = useState<Profile[]>([]);
   const [cover, setCover] = useState<string | null>(null);
@@ -692,6 +720,15 @@ function MembersPanel({
             ))}
           </>
         )}
+
+        {isAdmin && (
+          <Pressable
+            onPress={deleteGroup}
+            style={({ pressed }) => [styles.deleteGroup, { borderColor: theme.danger }, pressed && { backgroundColor: theme.danger + '18' }]}>
+            <Ionicons name="trash" size={18} color={theme.danger} />
+            <ThemedText style={[styles.deleteGroupText, { color: theme.danger }]}>Delete channel</ThemedText>
+          </Pressable>
+        )}
       </ScrollView>
     </View>
   );
@@ -699,11 +736,13 @@ function MembersPanel({
 
 function LeaderboardPane() {
   return (
-    <Pane title="Leaderboard" subtitle="who's performing — by views, posts & activity">
-      <View style={{ maxWidth: 720, width: '100%' }}>
-        <LeaderboardView />
-      </View>
-    </Pane>
+    <ScrollView style={styles.flex} contentContainerStyle={styles.fullPane}>
+      <ThemedText style={styles.paneTitle}>Leaderboard</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={{ marginBottom: Spacing.two }}>
+        who's performing — by views, posts & activity
+      </ThemedText>
+      <LeaderboardView />
+    </ScrollView>
   );
 }
 
@@ -739,10 +778,11 @@ function ProfilePane() {
 function HomePane() {
   const theme = useTheme();
   const router = useRouter();
-  const { profile } = useAuth();
-  const { loading, accounts, videos, totalFollowing, totalViews, totalVideos, paidOut, nextPayout, nextPayoutDate, payoutLogs, connected } = useStats();
+  const { profile, session } = useAuth();
+  const { loading, accounts, videos, totalFollowing, totalViews, totalVideos, payout, connected } = useStats();
+  const { totalPaid, payouts } = usePayouts(session?.user?.id ?? null);
   const { levelNum, current } = useProgress();
-  const payoutDay = nextPayoutDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const owed = Math.max(0, payout - totalPaid);
   const topVideos = [...videos].sort((a, b) => b.views - a.views).slice(0, 6);
   const first = profile?.full_name?.split(' ')[0] ?? 'creator';
 
@@ -757,20 +797,20 @@ function HomePane() {
             <ThemedText style={styles.payLabel}>paid out</ThemedText>
             <Ionicons name="chevron-forward" size={15} color="#fff" />
           </View>
-          <ThemedText style={styles.payValue}>${paidOut.toLocaleString()}</ThemedText>
+          <ThemedText style={styles.payValue}>${totalPaid.toLocaleString()}</ThemedText>
           <ThemedText style={styles.paySub}>
-            {payoutLogs.length} {payoutLogs.length === 1 ? 'payment' : 'payments'}
+            {payouts.length} {payouts.length === 1 ? 'payment' : 'payments'}
           </ThemedText>
         </Pressable>
         <Pressable
-          onPress={() => router.push({ pathname: '/payout-breakdown', params: { mode: 'next' } })}
+          onPress={() => router.push({ pathname: '/payout-breakdown', params: { mode: 'owed' } })}
           style={({ pressed }) => [styles.payCard, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 4), pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
           <View style={styles.payTop}>
-            <ThemedText style={[styles.payLabel, { color: theme.primaryText }]}>next payout</ThemedText>
+            <ThemedText style={[styles.payLabel, { color: theme.primaryText }]}>owed to you</ThemedText>
             <Ionicons name="chevron-forward" size={15} color={theme.primaryText} />
           </View>
-          <ThemedText style={[styles.payValue, { color: theme.primaryText }]}>${nextPayout.toLocaleString()}</ThemedText>
-          <ThemedText style={[styles.paySub, { color: theme.primaryText }]}>by {payoutDay}</ThemedText>
+          <ThemedText style={[styles.payValue, { color: theme.primaryText }]}>${owed.toLocaleString()}</ThemedText>
+          <ThemedText style={[styles.paySub, { color: theme.primaryText }]}>${payout.toLocaleString()} earned lifetime</ThemedText>
         </Pressable>
 
         {/* Level */}
@@ -1059,6 +1099,17 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1.75,
   },
+  deleteGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.four,
+    height: 48,
+    borderRadius: Radius.md,
+    borderWidth: Border.widthThick,
+  },
+  deleteGroupText: { fontSize: 15, fontWeight: '900' },
 
   profileContent: { alignItems: 'center', padding: Spacing.five },
   profileInner: { width: '100%', maxWidth: 520, gap: Spacing.three },
@@ -1069,6 +1120,7 @@ const styles = StyleSheet.create({
   // Shared pane chrome — content anchored left (after the rail) with consistent padding
   paneScroll: { padding: Spacing.five, paddingBottom: Spacing.six },
   paneInner: { width: '100%', maxWidth: 1040, gap: Spacing.three },
+  fullPane: { padding: Spacing.five, paddingBottom: Spacing.six, gap: Spacing.one },
   paneHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: Spacing.three, marginBottom: Spacing.one },
   paneTitle: { fontSize: 30, lineHeight: 38, fontWeight: '900' },
   paneAction: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.three, height: 42, borderRadius: Radius.full, borderWidth: Border.width },

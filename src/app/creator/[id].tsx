@@ -6,6 +6,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
+import { DesktopFrame } from '@/components/desktop-frame';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -61,6 +62,7 @@ export default function CreatorProfile() {
   const accentColor = level?.color ?? theme.primary;
 
   return (
+    <DesktopFrame active="creators">
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
@@ -139,6 +141,7 @@ export default function CreatorProfile() {
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
+    </DesktopFrame>
   );
 }
 

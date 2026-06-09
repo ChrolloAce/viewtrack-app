@@ -105,6 +105,60 @@ export async function vtLeaderboard(): Promise<LeaderboardEntry[]> {
   return d?.entries ?? [];
 }
 
+/** Admin: trigger a ViewTrack re-sync of every account in the project. */
+export async function vtRefreshProject(): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('vt-refresh', { body: { action: 'project' } });
+  if (error) return { ok: false, error: error.message };
+  return { ok: !!(data as { ok?: boolean })?.ok };
+}
+
+/** Admin: re-sync one creator's linked accounts. */
+export async function vtRefreshCreator(profileId: string): Promise<{ refreshed: number; total: number }> {
+  const { data } = await supabase.functions.invoke('vt-refresh', { body: { action: 'creator', profileId } });
+  const d = data as { refreshed?: number; total?: number } | null;
+  return { refreshed: d?.refreshed ?? 0, total: d?.total ?? 0 };
+}
+
+export type VtCreator = { id: string; name: string; avatarUrl: string | null; accountCount: number; totalViews: number; totalVideos: number };
+
+export type TranscriptSeg = { start?: number; end?: number; text?: string };
+export type VideoAnalysis = {
+  transcript?: TranscriptSeg[];
+  summary?: string;
+  hook?: string;
+  topics?: string[];
+  tone?: string;
+  pacing?: string;
+  whatWorked?: string;
+  suggestions?: string;
+};
+
+/** Admin: run (or fetch cached) Gemini analysis of a tracked video. Slow on first run. */
+export async function vtAnalyzeVideo(videoId: string, force = false): Promise<{ ok: boolean; analysis?: VideoAnalysis; cached?: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('vt-analyze', { body: { videoId, force } });
+  if (error) return { ok: false, error: error.message };
+  const d = data as { ok?: boolean; analysis?: VideoAnalysis; cached?: boolean; error?: string } | null;
+  return d?.ok ? { ok: true, analysis: d.analysis, cached: d.cached } : { ok: false, error: d?.error ?? 'failed' };
+}
+
+/** The stored analysis for a video (null if never analyzed). */
+export async function getVideoAnalysis(videoId: string): Promise<{ analysis: VideoAnalysis; flagged: boolean } | null> {
+  const { data } = await sb.from('video_analyses').select('analysis, flagged').eq('video_id', videoId).maybeSingle();
+  return data ? { analysis: data.analysis as VideoAnalysis, flagged: !!data.flagged } : null;
+}
+
+/** Admin: list the creators that exist in ViewTrack (to import into the app). */
+export async function vtListCreators(): Promise<VtCreator[]> {
+  const { data } = await supabase.functions.invoke('vt-refresh', { body: { action: 'list-creators' } });
+  return (data as { creators?: VtCreator[] } | null)?.creators ?? [];
+}
+
+/** Admin: every tracked video in the project (for the Videos grid). */
+export async function vtListVideos(limit = 300): Promise<VtVideo[]> {
+  const { data } = await supabase.functions.invoke('vt-refresh', { body: { action: 'list-videos', limit } });
+  return (data as { videos?: VtVideo[] } | null)?.videos ?? [];
+}
+
 export type AccountLink = {
   id: string;
   profile_id: string;

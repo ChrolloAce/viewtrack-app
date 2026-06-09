@@ -31,7 +31,7 @@ export function LeaderboardView() {
 }
 
 const styles = StyleSheet.create({
-  seg: { flexDirection: 'row', borderRadius: Radius.full, borderWidth: Border.width, padding: 3, alignSelf: 'stretch' },
-  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: Radius.full },
+  seg: { flexDirection: 'row', borderRadius: Radius.sm, borderWidth: Border.width, padding: 3, alignSelf: 'stretch' },
+  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: Radius.sm },
   segText: { fontSize: 14, fontWeight: '800' },
 });

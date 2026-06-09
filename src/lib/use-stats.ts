@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/lib/auth';
+import { fetchDeal, STANDARD_DEAL, type Deal } from '@/lib/payouts';
 import { vtMe, type VtAccount, type VtVideo } from '@/lib/viewtrack';
 
-// Bonus structure: $15 per video + $100 for every full 100k views (milestone).
+// Standard deal: $15 per video + $100 for every full 100k views (milestone).
+// Creators can have a custom deal that overrides these.
 export const PAYOUT_PER_VIDEO = 15;
 export const VIEWS_BONUS = 100;
 export const VIEWS_BONUS_PER = 100_000;
@@ -21,6 +23,16 @@ export function useStats() {
   const [accounts, setAccounts] = useState<VtAccount[]>(statsCache?.accounts ?? []);
   const [videos, setVideos] = useState<VtVideo[]>(statsCache?.videos ?? []);
   const [loading, setLoading] = useState(!statsCache);
+  const [deal, setDeal] = useState<Deal>(STANDARD_DEAL);
+
+  useEffect(() => {
+    if (!uid) return;
+    let active = true;
+    fetchDeal(uid).then((d) => active && setDeal(d ?? STANDARD_DEAL));
+    return () => {
+      active = false;
+    };
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;
@@ -50,14 +62,14 @@ export function useStats() {
   const totalViews = accounts.reduce((s, a) => s + (a.totalViews ?? 0), 0);
   const totalVideos = accounts.reduce((s, a) => s + (a.totalVideos ?? 0), 0);
 
-  const videosBonus = totalVideos * PAYOUT_PER_VIDEO;
-  // $100 for every full 100k views a video gets — calculated per video.
-  const viewsBonus = videos.reduce((s, v) => s + Math.floor((v.views ?? 0) / VIEWS_BONUS_PER) * VIEWS_BONUS, 0);
+  const videosBonus = totalVideos * deal.per_video;
+  // $bonus_per for every full bonus_unit views a video gets — calculated per video.
+  const viewsBonus = videos.reduce((s, v) => s + Math.floor((v.views ?? 0) / deal.bonus_unit) * deal.bonus_per, 0);
   const payout = videosBonus + viewsBonus;
 
   // How many bonus milestones were hit, and how many videos earned at least one.
-  const bonusCount = videos.reduce((s, v) => s + Math.floor((v.views ?? 0) / VIEWS_BONUS_PER), 0);
-  const bonusVideoCount = videos.filter((v) => (v.views ?? 0) >= VIEWS_BONUS_PER).length;
+  const bonusCount = videos.reduce((s, v) => s + Math.floor((v.views ?? 0) / deal.bonus_unit), 0);
+  const bonusVideoCount = videos.filter((v) => (v.views ?? 0) >= deal.bonus_unit).length;
 
   // Weekly settlement: creators are paid each Sunday for the week prior. Earnings
   // from videos in the current period (since the last Sunday) land this coming
@@ -70,7 +82,7 @@ export function useStats() {
   nextPayoutDate.setDate(periodStart.getDate() + 7); // upcoming Sunday
   const periodStartTs = periodStart.getTime();
 
-  const videoPay = (v: VtVideo) => PAYOUT_PER_VIDEO + Math.floor((v.views ?? 0) / VIEWS_BONUS_PER) * VIEWS_BONUS;
+  const videoPay = (v: VtVideo) => deal.per_video + Math.floor((v.views ?? 0) / deal.bonus_unit) * deal.bonus_per;
 
   // Videos earning toward the upcoming Sunday payout.
   const currentPeriodVideos = videos
@@ -124,9 +136,10 @@ export function useStats() {
     viewsBonus,
     bonusCount,
     bonusVideoCount,
-    perVideo: PAYOUT_PER_VIDEO,
-    bonusPer: VIEWS_BONUS,
-    bonusUnit: VIEWS_BONUS_PER,
+    perVideo: deal.per_video,
+    bonusPer: deal.bonus_per,
+    bonusUnit: deal.bonus_unit,
+    deal,
     connected: accounts.length > 0,
   };
 }
