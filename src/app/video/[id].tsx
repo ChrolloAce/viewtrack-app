@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { BrutalCard } from '@/components/brutal';
 import { DesktopFrame } from '@/components/desktop-frame';
+import { FlagChecklist } from '@/components/flag-checklist';
 import { OverlaySlider } from '@/components/overlay-slider';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -183,6 +184,7 @@ export default function VideoDetail() {
             </BrutalCard>
           ) : analysis ? (
             <>
+              <FlagChecklist overlays={Array.isArray(analysis.textOverlays) || Array.isArray(analysis.overlays) ? overlayItems(analysis) : null} />
               {transcriptSegs(analysis).length > 0 && (
                 <BrutalCard style={{ gap: 0 }}>
                   <Pressable onPress={() => setShowTranscript((s) => !s)} style={[styles.transcriptHead, showTranscript && styles.sectionHeadOpen]}>

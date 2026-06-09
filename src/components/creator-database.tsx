@@ -6,6 +6,7 @@ import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, Sty
 import { useCreatorsData, type Creator, type ExistingLink, type RequestedLink } from '@/app/(tabs)/creators';
 import { AccountManager } from '@/components/account-manager';
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
+import { ChecklistEditor, FlagChecklist } from '@/components/flag-checklist';
 import { OverlaySlider } from '@/components/overlay-slider';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -1147,6 +1148,7 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
   // transcript + overlays are the main things admins come for — open by default
   const [showTranscript, setShowTranscript] = useState(true);
   const [showOverlays, setShowOverlays] = useState(true);
+  const [editChecklist, setEditChecklist] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1250,6 +1252,10 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
               </View>
             ) : analysis ? (
               <>
+                <FlagChecklist
+                  overlays={Array.isArray(analysis.textOverlays) || Array.isArray(analysis.overlays) ? overlays : null}
+                  onEdit={isAdmin ? () => setEditChecklist(true) : undefined}
+                />
                 {segs.length > 0 && (
                   <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
                     <Pressable onPress={() => setShowTranscript((s) => !s)} style={[styles.sectionHead, showTranscript && styles.sectionHeadOpen]}>
@@ -1310,6 +1316,7 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
             )}
           </View>
           </View>
+          {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
         </Pressable>
       </Pressable>
     </Modal>

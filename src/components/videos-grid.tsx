@@ -5,10 +5,12 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { AnalyzeModal } from '@/components/creator-database';
 import { Dropdown, type DropdownOption } from '@/components/dropdown';
+import { ChecklistEditor } from '@/components/flag-checklist';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { vtListVideos, type VtVideo } from '@/lib/viewtrack';
 
@@ -21,6 +23,13 @@ const SORTS: DropdownOption<Sort>[] = [
   { value: 'recent', label: 'Most recent', icon: 'time' },
   { value: 'views', label: 'Top views', icon: 'eye' },
   { value: 'likes', label: 'Most liked', icon: 'heart' },
+];
+
+type FlagFilter = 'all' | 'flagged' | 'passing';
+const FLAG_FILTERS: DropdownOption<FlagFilter>[] = [
+  { value: 'all', label: 'All videos', icon: 'albums-outline' },
+  { value: 'flagged', label: 'Flagged only', icon: 'flag' },
+  { value: 'passing', label: 'Passing only', icon: 'checkmark-circle-outline' },
 ];
 
 type Timeframe = '3d' | '7d' | '14d' | '30d' | 'all';
@@ -42,8 +51,22 @@ export function VideosGrid() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<Sort>('views');
   const [timeframe, setTimeframe] = useState<Timeframe>('7d');
+  const [flagFilter, setFlagFilter] = useState<FlagFilter>('all');
   const [open, setOpen] = useState<VtVideo | null>(null);
+  const [editChecklist, setEditChecklist] = useState(false);
   const { map: analyses } = useVideoAnalyses();
+  const { reqs } = useFlagRequirements();
+
+  // flag verdict per analyzed video — recomputed live when requirements change
+  const flaggedById = useMemo(() => {
+    const out: Record<string, boolean> = {};
+    if (!reqs.length) return out;
+    for (const [id, st] of Object.entries(analyses)) {
+      // old analyses have no overlay data — treat as "not evaluated", not flagged
+      if (st.status === 'done' && st.overlays) out[id] = isFlagged(evaluateFlags(st.overlays, reqs));
+    }
+    return out;
+  }, [analyses, reqs]);
 
   useEffect(() => {
     let active = true;
@@ -63,12 +86,14 @@ export function VideosGrid() {
   }, [timeframe]);
 
   const sorted = useMemo(() => {
-    const arr = [...videos];
+    let arr = [...videos];
+    if (flagFilter === 'flagged') arr = arr.filter((v) => flaggedById[v.id] === true);
+    else if (flagFilter === 'passing') arr = arr.filter((v) => flaggedById[v.id] === false);
     if (sort === 'recent') arr.sort((a, b) => new Date(b.uploadDate ?? 0).getTime() - new Date(a.uploadDate ?? 0).getTime());
     else if (sort === 'likes') arr.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
-  }, [videos, sort]);
+  }, [videos, sort, flagFilter, flaggedById]);
 
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
 
@@ -83,6 +108,11 @@ export function VideosGrid() {
       <View style={styles.controls}>
         <Dropdown value={timeframe} options={TF_OPTS} onChange={setTimeframe} minWidth={170} />
         <Dropdown value={sort} options={SORTS} onChange={setSort} minWidth={170} />
+        {reqs.length > 0 && <Dropdown value={flagFilter} options={FLAG_FILTERS} onChange={setFlagFilter} minWidth={150} />}
+        <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
+          <Ionicons name="flag-outline" size={15} color={theme.text} />
+          <ThemedText style={styles.checklistBtnText}>checklist</ThemedText>
+        </Pressable>
         {!loading && (
           <ThemedText type="small" themeColor="textSecondary" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
             {sorted.length} {timeframe === 'all' ? `of ${total} videos` : `videos · ${tfLabel}`}
@@ -104,20 +134,21 @@ export function VideosGrid() {
       ) : (
         <View style={styles.grid}>
           {sorted.map((v) => (
-            <VideoCard key={v.id} video={v} state={analyses[v.id]} onPress={() => setOpen(v)} />
+            <VideoCard key={v.id} video={v} state={analyses[v.id]} flagged={flaggedById[v.id] === true} onPress={() => setOpen(v)} />
           ))}
         </View>
       )}
 
       {open && <AnalyzeModal video={open} onClose={() => setOpen(null)} />}
+      {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
     </ScrollView>
   );
 }
 
-function VideoCard({ video: v, state, onPress }: { video: VtVideo; state?: AnalysisState; onPress: () => void }) {
+function VideoCard({ video: v, state, flagged, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.tile, { borderColor: theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 3), pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.tile, { borderColor: flagged ? theme.danger : theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 3), pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
       <View style={styles.thumbWrap}>
         {v.thumbnail ? (
           <Image source={{ uri: v.thumbnail }} style={styles.thumb} contentFit="cover" />
@@ -130,6 +161,12 @@ function VideoCard({ video: v, state, onPress }: { video: VtVideo; state?: Analy
           <Ionicons name={PLATFORM_ICON[v.platform] as never} size={13} color={PLATFORM_COLOR[v.platform] ?? theme.text} />
         </View>
         <AnalyzedBadge state={state} />
+        {flagged && (
+          <View style={[styles.flagBadge, { backgroundColor: theme.danger, borderColor: theme.card }]}>
+            <Ionicons name="flag" size={11} color="#fff" />
+            <ThemedText style={styles.flagText}>FLAGGED</ThemedText>
+          </View>
+        )}
         <View style={styles.viewsOverlay}>
           <Ionicons name="eye" size={12} color="#fff" />
           <ThemedText style={styles.viewsText}>{compact(v.views)}</ThemedText>
@@ -179,6 +216,10 @@ const styles = StyleSheet.create({
   platBadge: { position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   aiBadge: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   viewsOverlay: { position: 'absolute', bottom: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.full },
+  flagBadge: { position: 'absolute', bottom: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5 },
+  flagText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
+  checklistBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
+  checklistBtnText: { fontSize: 14, fontWeight: '800' },
   viewsText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   acct: { fontSize: 13, fontWeight: '800', padding: 7 },
 });
