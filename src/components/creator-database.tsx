@@ -1144,8 +1144,9 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
   // 'processing' = a background run is in flight (the modal can be closed).
   const [analyzing, setAnalyzing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // transcript is the main thing admins come for — open by default
+  // transcript + overlays are the main things admins come for — open by default
   const [showTranscript, setShowTranscript] = useState(true);
+  const [showOverlays, setShowOverlays] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -1251,28 +1252,33 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
               <>
                 {segs.length > 0 && (
                   <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    <Pressable onPress={() => setShowTranscript((s) => !s)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Pressable onPress={() => setShowTranscript((s) => !s)} style={[styles.sectionHead, showTranscript && styles.sectionHeadOpen]}>
                       <ThemedText style={[styles.aiBlkLabel, { color: theme.primary }]}>TRANSCRIPT</ThemedText>
-                      <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+                      <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={16} color={theme.text} />
                     </Pressable>
                     {showTranscript &&
                       segs.map((seg, i) => (
-                        <ThemedText key={i} style={styles.aiBlkText}>
-                          {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
-                          {seg.text}
-                        </ThemedText>
+                        <View key={i} style={[styles.segRow, i < segs.length - 1 && styles.segDivider]}>
+                          <ThemedText style={styles.aiBlkText}>
+                            {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
+                            {seg.text}
+                          </ThemedText>
+                        </View>
                       ))}
                   </View>
                 )}
                 {overlays.length > 0 && (
-                  <View style={{ gap: Spacing.one }}>
-                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>OVERLAYS</ThemedText>
-                    <OverlaySlider overlays={overlays} videoId={video.id} />
+                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <Pressable onPress={() => setShowOverlays((s) => !s)} style={[styles.sectionHead, showOverlays && styles.sectionHeadOpen]}>
+                      <ThemedText style={[styles.aiBlkLabel, { color: theme.primary }]}>OVERLAYS</ThemedText>
+                      <Ionicons name={showOverlays ? 'chevron-up' : 'chevron-down'} size={16} color={theme.text} />
+                    </Pressable>
+                    {showOverlays && <OverlaySlider overlays={overlays} videoId={video.id} />}
                   </View>
                 )}
                 {!!textOf(analysis.hook) && (
                   <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>HOOK</ThemedText>
+                    <ThemedText style={[styles.aiBlkLabel, { color: theme.primary }]}>HOOK</ThemedText>
                     <ThemedText style={styles.aiBlkText}>{textOf(analysis.hook)}</ThemedText>
                   </View>
                 )}
@@ -1339,6 +1345,10 @@ const styles = StyleSheet.create({
   analyzeThumb: { width: 44, height: 56, borderRadius: Radius.sm },
   aiBlk: { gap: 4, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
   aiBlkLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionHeadOpen: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.1)', paddingBottom: 8, marginBottom: 4 },
+  segRow: { paddingVertical: 6 },
+  segDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.07)' },
   aiBlkText: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
   aiChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   aiChip: { paddingHorizontal: Spacing.two, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1.5 },

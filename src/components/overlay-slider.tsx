@@ -50,13 +50,23 @@ function OverlayCard({ overlay: o, uri }: { overlay: OverlayItem; uri?: string }
         )}
         {!!o.timestamp && (
           <View style={styles.stamp}>
-            <ThemedText style={styles.stampText}>{o.timestamp}</ThemedText>
+            <ThemedText style={styles.stampText}>
+              {o.timestamp}
+              {o.endTimestamp ? `–${o.endTimestamp}` : ''}
+            </ThemedText>
           </View>
         )}
       </View>
-      <ThemedText type="small" style={styles.caption} numberOfLines={4}>
-        {o.text}
-      </ThemedText>
+      <View style={styles.caption}>
+        {!!o.type && (
+          <ThemedText type="small" style={[styles.type, { color: theme.primary }]}>
+            {o.type.toUpperCase()}
+          </ThemedText>
+        )}
+        <ThemedText type="small" style={styles.captionText} numberOfLines={4}>
+          {o.text || o.description}
+        </ThemedText>
+      </View>
     </View>
   );
 }
@@ -68,5 +78,7 @@ const styles = StyleSheet.create({
   frameEmpty: { alignItems: 'center', justifyContent: 'center' },
   stamp: { position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.full },
   stampText: { color: '#fff', fontSize: 11, fontWeight: '900' },
-  caption: { padding: Spacing.one + 2, lineHeight: 16 },
+  caption: { padding: Spacing.one + 2, gap: 2 },
+  type: { fontWeight: '900', fontSize: 10, letterSpacing: 0.6 },
+  captionText: { lineHeight: 16 },
 });

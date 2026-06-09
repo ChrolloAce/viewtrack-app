@@ -51,8 +51,9 @@ export default function VideoDetail() {
   const [loadingA, setLoadingA] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [aErr, setAErr] = useState<string | null>(null);
-  // transcript is the main thing this screen is for — open by default
+  // transcript + overlays are the main things this screen is for — open by default
   const [showTranscript, setShowTranscript] = useState(true);
+  const [showOverlays, setShowOverlays] = useState(true);
 
   useEffect(() => {
     if (!videoId) return;
@@ -183,30 +184,32 @@ export default function VideoDetail() {
           ) : analysis ? (
             <>
               {transcriptSegs(analysis).length > 0 && (
-                <BrutalCard style={{ gap: Spacing.two }}>
-                  <Pressable onPress={() => setShowTranscript((s) => !s)} style={styles.transcriptHead}>
-                    <ThemedText style={styles.aiBlockLabel}>Transcript</ThemedText>
-                    <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textSecondary} />
+                <BrutalCard style={{ gap: 0 }}>
+                  <Pressable onPress={() => setShowTranscript((s) => !s)} style={[styles.transcriptHead, showTranscript && styles.sectionHeadOpen]}>
+                    <ThemedText style={[styles.aiBlockLabel, { color: theme.primary }]}>Transcript</ThemedText>
+                    <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={18} color={theme.text} />
                   </Pressable>
                   {showTranscript &&
-                    transcriptSegs(analysis).map((seg, i) => (
-                      <ThemedText key={i} style={styles.aiBlockText}>
-                        {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
-                        {seg.text}
-                      </ThemedText>
+                    transcriptSegs(analysis).map((seg, i, arr) => (
+                      <View key={i} style={[styles.segRow, i < arr.length - 1 && styles.segDivider]}>
+                        <ThemedText style={styles.aiBlockText}>
+                          {segTime(seg) ? <ThemedText type="small" themeColor="textSecondary">{`${segTime(seg)}  `}</ThemedText> : null}
+                          {seg.text}
+                        </ThemedText>
+                      </View>
                     ))}
                 </BrutalCard>
               )}
               {overlayItems(analysis).length > 0 && (
-                <View style={{ gap: Spacing.one }}>
-                  <View style={styles.aiBlockHead}>
-                    <Ionicons name="text" size={16} color={theme.accent} />
-                    <ThemedText style={styles.aiBlockLabel}>Overlays</ThemedText>
-                  </View>
-                  <OverlaySlider overlays={overlayItems(analysis)} videoId={videoId ?? undefined} />
-                </View>
+                <BrutalCard style={{ gap: 0 }}>
+                  <Pressable onPress={() => setShowOverlays((s) => !s)} style={[styles.transcriptHead, showOverlays && styles.sectionHeadOpen]}>
+                    <ThemedText style={[styles.aiBlockLabel, { color: theme.primary }]}>Overlays</ThemedText>
+                    <Ionicons name={showOverlays ? 'chevron-up' : 'chevron-down'} size={18} color={theme.text} />
+                  </Pressable>
+                  {showOverlays && <OverlaySlider overlays={overlayItems(analysis)} videoId={videoId ?? undefined} />}
+                </BrutalCard>
               )}
-              {!!textOf(analysis.hook) && <AiBlock icon="fish" label="Hook" text={textOf(analysis.hook)!} tint={theme.accent} />}
+              {!!textOf(analysis.hook) && <AiBlock icon="fish" label="Hook" text={textOf(analysis.hook)!} tint={theme.primary} />}
               {isAdmin && (
                 <Pressable onPress={() => analyze(true)} disabled={analyzing} style={({ pressed }) => [styles.reanalyze, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
                   <Ionicons name="refresh" size={14} color={theme.textSecondary} />
@@ -320,6 +323,9 @@ const styles = StyleSheet.create({
   aiBlockLabel: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   aiBlockText: { fontSize: 15, lineHeight: 21, fontWeight: '500' },
   transcriptHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeadOpen: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.1)', paddingBottom: 8, marginBottom: 6 },
+  segRow: { paddingVertical: 6 },
+  segDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.07)' },
   reanalyze: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: Spacing.two, borderRadius: Radius.full, borderWidth: Border.width, alignSelf: 'center', paddingHorizontal: Spacing.three },
   analyzeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, height: 56, borderRadius: Radius.md, borderWidth: Border.widthThick },
   analyzeText: { fontSize: 16, fontWeight: '900' },
