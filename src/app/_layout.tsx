@@ -37,18 +37,21 @@ function RootNavigator() {
   }, [session, profile]);
 
   const role = (profile as { role?: string } | null)?.role;
+  // Everyone must accept the community guidelines + terms before the app.
+  const needsTerms = !!session && !!profile && !(profile as { accepted_terms_at?: string | null }).accepted_terms_at;
   // A new account starts as 'customer'. Before using the app they must set a
   // name + photo, then join a project with a code (which upgrades their role).
   const profileIncomplete = !!session && !!profile && (!(profile.full_name ?? '').trim() || !profile.avatar_url);
-  const needsOnboarding = !!session && !!profile && (role === 'creator' || role === 'customer') && profileIncomplete;
-  const needsJoin = !!session && !!profile && role === 'customer' && !profileIncomplete;
+  const needsOnboarding = !needsTerms && !!session && !!profile && (role === 'creator' || role === 'customer') && profileIncomplete;
+  const needsJoin = !needsTerms && !!session && !!profile && role === 'customer' && !profileIncomplete;
 
   // Route guard: signed-out users go to auth; signed-in users never sit on an
-  // auth screen; new accounts are held at onboarding (name+photo) then at
-  // join-project (code) until they've joined.
+  // auth screen; new accounts agree to terms, then set name+photo, then join a
+  // project with a code before they reach the app.
   useEffect(() => {
     if (loading) return;
     const inAuthGroup = segments[0] === '(auth)';
+    const onTerms = segments[0] === 'terms';
     const onOnboarding = segments[0] === 'onboarding';
     const onJoin = segments[0] === 'join-project';
     const onReset = segments[0] === 'reset-password';
@@ -56,14 +59,16 @@ function RootNavigator() {
       router.replace('/(auth)/sign-in');
     } else if (session && inAuthGroup) {
       router.replace('/');
-    } else if (session && needsOnboarding && !onOnboarding) {
+    } else if (session && needsTerms && !onTerms) {
+      router.replace('/terms');
+    } else if (session && !needsTerms && needsOnboarding && !onOnboarding) {
       router.replace('/onboarding');
-    } else if (session && !needsOnboarding && needsJoin && !onJoin) {
+    } else if (session && !needsTerms && !needsOnboarding && needsJoin && !onJoin) {
       router.replace('/join-project');
-    } else if (session && !needsOnboarding && !needsJoin && (onOnboarding || onJoin)) {
+    } else if (session && !needsTerms && !needsOnboarding && !needsJoin && (onTerms || onOnboarding || onJoin)) {
       router.replace('/');
     }
-  }, [session, loading, segments, router, needsOnboarding, needsJoin]);
+  }, [session, loading, segments, router, needsTerms, needsOnboarding, needsJoin]);
 
   if (loading) {
     return (
@@ -85,6 +90,7 @@ function RootNavigator() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="(auth)" />
+          <Stack.Screen name="terms" options={{ gestureEnabled: false }} />
           <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
           <Stack.Screen name="join-project" options={{ gestureEnabled: false }} />
           <Stack.Screen name="reset-password" />

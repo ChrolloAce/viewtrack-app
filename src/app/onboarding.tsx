@@ -12,7 +12,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { pickAndUploadAvatar } from '@/lib/avatar';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, submitLink } from '@/lib/viewtrack';
 
 export default function OnboardingScreen() {
   const theme = useTheme();
@@ -22,7 +21,6 @@ export default function OnboardingScreen() {
 
   const [name, setName] = useState(profile?.full_name ?? '');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatar_url ?? null);
-  const [links, setLinks] = useState<string[]>(['']);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +51,6 @@ export default function OnboardingScreen() {
     try {
       if (name.trim() !== (profile?.full_name ?? '')) {
         await supabase.from('profiles').update({ full_name: name.trim() }).eq('id', uid);
-      }
-      // Optional: fire off any account links they pasted.
-      for (const raw of links) {
-        const url = raw.trim();
-        if (url && detectPlatform(url)) await submitLink(url);
       }
       await refreshProfile();
       router.replace('/');
@@ -102,34 +95,6 @@ export default function OnboardingScreen() {
                 YOUR NAME
               </ThemedText>
               <BrutalInput placeholder="e.g. Ernesto Lopez" value={name} onChangeText={setName} autoCapitalize="words" />
-            </View>
-
-            {/* Optional account links */}
-            <View style={styles.field}>
-              <View style={styles.optHead}>
-                <ThemedText type="smallBold" themeColor="textSecondary" style={styles.label}>
-                  LINK YOUR ACCOUNTS
-                </ThemedText>
-                <View style={[styles.optPill, { borderColor: theme.border }]}>
-                  <ThemedText style={[styles.optPillText, { color: theme.textSecondary }]}>optional</ThemedText>
-                </View>
-              </View>
-              {links.map((url, i) => (
-                <BrutalInput
-                  key={i}
-                  placeholder="Paste a TikTok / Instagram / YouTube link"
-                  value={url}
-                  autoCapitalize="none"
-                  onChangeText={(t) => setLinks((arr) => arr.map((v, j) => (j === i ? t : v)))}
-                />
-              ))}
-              <Pressable onPress={() => setLinks((a) => [...a, ''])} style={styles.addRow} hitSlop={8}>
-                <Ionicons name="add-circle-outline" size={18} color={theme.primary} />
-                <ThemedText style={[styles.addText, { color: theme.primary }]}>add another</ThemedText>
-              </Pressable>
-              <ThemedText type="small" themeColor="textSecondary">
-                You can always do this later in Settings.
-              </ThemedText>
             </View>
 
             {error && (
