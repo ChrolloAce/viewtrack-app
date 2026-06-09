@@ -21,13 +21,13 @@ set -a; source .env; set +a
 URL="$EXPO_PUBLIC_SUPABASE_URL"
 ANON="$EXPO_PUBLIC_SUPABASE_ANON_KEY"
 
-echo "▸ Signing in as $ADMIN_EMAIL…"
+echo "> Signing in as ${ADMIN_EMAIL}..."
 TOKEN=$(curl -s -X POST "$URL/auth/v1/token?grant_type=password" \
   -H "apikey: $ANON" -H "Content-Type: application/json" \
   -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r '.access_token // empty')
 [ -n "$TOKEN" ] || { echo "login failed"; exit 1; }
 
-echo "▸ Reading overlay timestamps for $VIDEO_ID…"
+echo "> Reading overlay timestamps for $VIDEO_ID..."
 TIMESTAMPS=$(curl -s "$URL/rest/v1/video_analyses?video_id=eq.$VIDEO_ID&select=analysis" \
   -H "apikey: $ANON" -H "Authorization: Bearer $TOKEN" \
   | jq -r '.[0].analysis.textOverlays[]?.timestamp // empty' | sort -u)
@@ -35,7 +35,7 @@ TIMESTAMPS=$(curl -s "$URL/rest/v1/video_analyses?video_id=eq.$VIDEO_ID&select=a
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-echo "▸ Downloading video…"
+echo "> Downloading video..."
 yt-dlp -q --no-warnings -f "mp4/best" -o "$WORK/video.mp4" "$VIDEO_URL"
 
 for TS in $TIMESTAMPS; do
@@ -46,6 +46,6 @@ for TS in $TIMESTAMPS; do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/storage/v1/object/overlay-frames/$VIDEO_ID/$S.jpg" \
     -H "apikey: $ANON" -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: image/jpeg" -H "x-upsert: true" --data-binary "@$WORK/$S.jpg")
-  echo "  frame $TS → upload $CODE"
+  echo "  frame $TS -> upload $CODE"
 done
-echo "✓ Done — overlay slider for $VIDEO_ID now shows real frames."
+echo "OK Done — overlay slider for $VIDEO_ID now shows real frames."
