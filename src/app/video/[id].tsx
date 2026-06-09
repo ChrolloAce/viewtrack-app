@@ -13,7 +13,7 @@ import { Border, brutalShadow, MaxContentWidth, Radius, Spacing } from '@/consta
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { VIEWS_BONUS, VIEWS_BONUS_PER } from '@/lib/use-stats';
-import { getVideoAnalysis, segTime, transcriptSegs, vtAnalyzeVideo, type VideoAnalysis, type VtVideo } from '@/lib/viewtrack';
+import { getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAnalyzeVideo, type VideoAnalysis, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -196,20 +196,23 @@ export default function VideoDetail() {
                     ))}
                 </BrutalCard>
               )}
-              {!!analysis.overlays?.length && (
+              {overlayItems(analysis).length > 0 && (
                 <BrutalCard style={{ gap: 5 }}>
                   <View style={styles.aiBlockHead}>
                     <Ionicons name="text" size={16} color={theme.accent} />
                     <ThemedText style={styles.aiBlockLabel}>Overlays used</ThemedText>
                   </View>
-                  {analysis.overlays.map((o, i) => (
-                    <ThemedText key={i} style={styles.aiBlockText}>“{o}”</ThemedText>
+                  {overlayItems(analysis).map((o, i) => (
+                    <ThemedText key={i} style={styles.aiBlockText}>
+                      {o.timestamp ? <ThemedText type="small" themeColor="textSecondary">{`${o.timestamp}  `}</ThemedText> : null}
+                      “{o.text}”
+                    </ThemedText>
                   ))}
                 </BrutalCard>
               )}
-              {!!analysis.hook && <AiBlock icon="fish" label="Hook" text={analysis.hook} tint={theme.accent} />}
-              {!!analysis.summary && <AiBlock icon="document-text" label="Summary" text={analysis.summary} tint={theme.textSecondary} />}
-              {!!analysis.whatWorked && <AiBlock icon="checkmark-circle" label="What worked" text={analysis.whatWorked} tint={theme.success} />}
+              {!!textOf(analysis.hook) && <AiBlock icon="fish" label="Hook" text={textOf(analysis.hook)!} tint={theme.accent} />}
+              {!!textOf(analysis.summary) && <AiBlock icon="document-text" label="Summary" text={textOf(analysis.summary)!} tint={theme.textSecondary} />}
+              {!!textOf(analysis.whatWorked) && <AiBlock icon="checkmark-circle" label="What worked" text={textOf(analysis.whatWorked)!} tint={theme.success} />}
               {(!!analysis.tone || !!analysis.pacing || !!analysis.topics?.length) && (
                 <View style={styles.aiChips}>
                   {!!analysis.tone && <Chip label={`tone: ${analysis.tone}`} />}

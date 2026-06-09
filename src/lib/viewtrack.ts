@@ -131,11 +131,27 @@ export type VideoAnalysis = {
   topics?: string[];
   tone?: string;
   pacing?: string;
-  whatWorked?: string;
+  whatWorked?: string | string[];
   suggestions?: string | string[];
-  /** Text overlays detected in the video — only present once ViewTrack's analyze prompt extracts them. */
-  overlays?: string[];
+  /** On-screen text overlays detected by ViewTrack's analyze prompt. */
+  textOverlays?: OverlayItem[];
+  overlays?: (string | OverlayItem)[];
 };
+
+export type OverlayItem = { timestamp?: string; text?: string };
+
+/** Analysis fields drift between string and list-of-points — render either. */
+export function textOf(v?: string | string[]): string | undefined {
+  if (Array.isArray(v)) return v.length ? v.map((s) => `• ${s}`).join('\n') : undefined;
+  return v || undefined;
+}
+
+/** Normalize overlays (either field name; string or {timestamp,text} items). */
+export function overlayItems(a: VideoAnalysis | null | undefined): OverlayItem[] {
+  const raw = a?.textOverlays ?? a?.overlays ?? [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((o) => (typeof o === 'string' ? { text: o } : o)).filter((o) => !!o?.text);
+}
 
 /** Normalize the transcript (string or either segment shape) into renderable segments. */
 export function transcriptSegs(a: VideoAnalysis | null | undefined): TranscriptSeg[] {

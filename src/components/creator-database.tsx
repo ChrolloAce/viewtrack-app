@@ -19,7 +19,7 @@ import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, getVideoAnalysis, segTime, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
+import { detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -1194,12 +1194,12 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
   }
 
   const blocks: { label: string; text?: string; tint: string }[] = [
-    { label: 'Hook', text: analysis?.hook, tint: theme.accent },
-    { label: 'Summary', text: analysis?.summary, tint: theme.textSecondary },
-    { label: 'What worked', text: analysis?.whatWorked, tint: theme.success },
+    { label: 'Hook', text: textOf(analysis?.hook), tint: theme.accent },
+    { label: 'Summary', text: textOf(analysis?.summary), tint: theme.textSecondary },
+    { label: 'What worked', text: textOf(analysis?.whatWorked), tint: theme.success },
   ];
   const segs = transcriptSegs(analysis);
-  const overlays = analysis?.overlays ?? [];
+  const overlays = overlayItems(analysis);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -1255,7 +1255,10 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
                   <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
                     <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>OVERLAYS USED</ThemedText>
                     {overlays.map((o, i) => (
-                      <ThemedText key={i} style={styles.aiBlkText}>“{o}”</ThemedText>
+                      <ThemedText key={i} style={styles.aiBlkText}>
+                        {o.timestamp ? <ThemedText type="small" themeColor="textSecondary">{`${o.timestamp}  `}</ThemedText> : null}
+                        “{o.text}”
+                      </ThemedText>
                     ))}
                   </View>
                 )}
