@@ -57,6 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadProfile(id: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', id).single();
     if (data) {
+      // Access removed by an admin → boot them out. They can't use the app
+      // until access is restored (signing back in just kicks them here again).
+      if ((data as { disabled?: boolean | null }).disabled && data.role !== 'admin') {
+        AsyncStorage.removeItem(PROFILE_CACHE_KEY).catch(() => {});
+        setProfile(null);
+        await supabase.auth.signOut();
+        return;
+      }
       setProfile(data);
       AsyncStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(data)).catch(() => {});
     }

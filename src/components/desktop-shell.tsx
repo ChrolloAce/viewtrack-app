@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { BrutalAvatar } from '@/components/brutal';
@@ -28,6 +28,15 @@ import { badgeFor } from '@/lib/badges';
 import { JobsProvider } from '@/lib/jobs';
 import { usePayouts } from '@/lib/payouts';
 import { pickImages, uploadLocalImage } from '@/lib/chat-media';
+import {
+  assignLabel,
+  createLabel,
+  LABEL_COLORS,
+  unassignLabel,
+  useLabels,
+  useProfileLabels,
+  type Label,
+} from '@/lib/labels';
 import { supabase } from '@/lib/supabase';
 import { useCompletions } from '@/lib/use-completions';
 import { useInbox, type InboxItem } from '@/lib/use-inbox';
@@ -45,8 +54,11 @@ function compact(n: number) {
 }
 
 const DIVIDER = 'rgba(0,0,0,0.08)';
-type Sel = { id: string; name: string; avatar?: string | null; type: string };
+// a few admin tables aren't in the generated types yet — cast around them.
+const sb = supabase as unknown as { from: (t: string) => any };
+type Sel = { id: string; name: string; avatar?: string | null; type: string; personId?: string | null };
 type Profile = { id: string; full_name: string | null; avatar_url: string | null };
+type ChatFilter = 'all' | 'group' | 'direct' | 'unread';
 
 function clock(iso: string) {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -234,7 +246,11 @@ function ChatConsole() {
   const { isAdmin } = useAuth();
   const [selected, setSelected] = useState<Sel | null>(null);
   const [creating, setCreating] = useState(false);
-  const [members, setMembers] = useState(false);
+  const [panel, setPanel] = useState(false);
+  const select = (s: Sel | null) => {
+    setSelected(s);
+    setPanel(false);
+  };
 
   // Mark the open conversation read — on select, on each new message, and on
   // switching away — so the unread badge clears.
@@ -271,7 +287,7 @@ function ChatConsole() {
         ) : (
           <ConversationList
             selectedId={selected?.id ?? null}
-            onSelect={setSelected}
+            onSelect={select}
             canCreate={isAdmin}
             onNew={() => setCreating(true)}
           />
@@ -280,13 +296,25 @@ function ChatConsole() {
 
       <View style={[styles.chatPane, { backgroundColor: theme.backgroundElement }]}>
         {selected ? (
-          members && selected.type === 'group' ? (
+          panel && selected.type === 'group' ? (
             <MembersPanel
               conversationId={selected.id}
               name={selected.name}
-              onClose={() => setMembers(false)}
+              onClose={() => setPanel(false)}
               onDeleted={() => {
-                setMembers(false);
+                setPanel(false);
+                setSelected(null);
+              }}
+            />
+          ) : panel && selected.type === 'direct' && isAdmin ? (
+            <PersonPanel
+              conversationId={selected.id}
+              personId={selected.personId ?? null}
+              name={selected.name}
+              avatar={selected.avatar ?? null}
+              onClose={() => setPanel(false)}
+              onDeleted={() => {
+                setPanel(false);
                 setSelected(null);
               }}
             />
@@ -303,11 +331,15 @@ function ChatConsole() {
                 <ThemedText style={styles.chatHeaderName} numberOfLines={1}>
                   {selected.name}
                 </ThemedText>
-                {selected.type === 'group' && (
-                  <Pressable onPress={() => setMembers(true)} style={styles.headerAction}>
+                {selected.type === 'group' ? (
+                  <Pressable onPress={() => setPanel(true)} style={styles.headerAction}>
                     <Ionicons name="people-outline" size={22} color={theme.text} />
                   </Pressable>
-                )}
+                ) : isAdmin ? (
+                  <Pressable onPress={() => setPanel(true)} style={styles.headerAction}>
+                    <Ionicons name="ellipsis-horizontal" size={22} color={theme.text} />
+                  </Pressable>
+                ) : null}
               </View>
               <ChatThread
                 conversationId={selected.id}
@@ -345,7 +377,11 @@ function ConversationList({
   const userId = session?.user?.id ?? null;
   const { items, reload } = useInbox();
   const { map: unread } = useUnread();
+  const { labels } = useLabels();
+  const { map: profileLabels } = useProfileLabels();
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<ChatFilter>('all');
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [agent, setAgent] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
 
   useEffect(() => {
@@ -359,9 +395,23 @@ function ConversationList({
     ).then(({ data }) => setAgent(data?.[0] ?? null));
   }, [isAdmin]);
 
+  const labelById = useMemo(() => Object.fromEntries(labels.map((l) => [l.id, l])), [labels]);
+  // labels only apply to a person, so a label filter implies direct chats only.
+  const labelsFor = (item: InboxItem): Label[] =>
+    item.type === 'direct' && item.customer
+      ? (profileLabels[item.customer.id] ?? []).map((id) => labelById[id]).filter(Boolean)
+      : [];
+
   const rows = items
     .map((item) => ({ item, d: describe(item, userId, agent) }))
-    .filter(({ d }) => d.name.toLowerCase().includes(query.trim().toLowerCase()));
+    .filter(({ item, d }) => {
+      if (!d.name.toLowerCase().includes(query.trim().toLowerCase())) return false;
+      if (filter === 'group' && item.type !== 'group') return false;
+      if (filter === 'direct' && item.type !== 'direct') return false;
+      if (filter === 'unread' && (unread[item.id] ?? 0) === 0) return false;
+      if (labelFilter && !labelsFor(item).some((l) => l.id === labelFilter)) return false;
+      return true;
+    });
 
   return (
     <View style={styles.flex}>
@@ -389,14 +439,49 @@ function ConversationList({
           style={[styles.search, { color: theme.text }]}
         />
       </View>
+
+      {/* filter bar: view chips + per-label chips (horizontally scrollable) */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterBarInner}>
+        {([
+          ['all', 'All'],
+          ['group', 'Groups'],
+          ['direct', 'Direct'],
+          ['unread', 'Unread'],
+        ] as [ChatFilter, string][]).map(([key, label]) => {
+          const on = filter === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setFilter(key)}
+              style={[styles.fChip, { borderColor: theme.border, backgroundColor: on ? theme.primary : theme.card }]}>
+              <ThemedText style={[styles.fChipText, { color: on ? theme.primaryText : theme.text }]}>{label}</ThemedText>
+            </Pressable>
+          );
+        })}
+        {labels.length > 0 && <View style={[styles.fDivider, { backgroundColor: theme.border }]} />}
+        {labels.map((l) => {
+          const on = labelFilter === l.id;
+          return (
+            <Pressable
+              key={l.id}
+              onPress={() => setLabelFilter(on ? null : l.id)}
+              style={[styles.fChip, { borderColor: on ? l.color : theme.border, backgroundColor: on ? l.color : theme.card }]}>
+              <View style={[styles.fDot, { backgroundColor: on ? theme.card : l.color }]} />
+              <ThemedText style={[styles.fChipText, { color: on ? '#fff' : theme.text }]}>{l.name}</ThemedText>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
       <ScrollView>
         {rows.map(({ item, d }) => {
           const count = unread[item.id] ?? 0;
           const active = selectedId === item.id;
+          const rowLabels = labelsFor(item);
           return (
             <Pressable
               key={item.id}
-              onPress={() => onSelect({ id: item.id, name: d.name, avatar: d.avatar, type: item.type })}
+              onPress={() => onSelect({ id: item.id, name: d.name, avatar: d.avatar, type: item.type, personId: item.type === 'direct' ? item.customer?.id ?? null : null })}
               style={(s) => [
                 styles.row,
                 { borderBottomColor: DIVIDER },
@@ -417,6 +502,22 @@ function ConversationList({
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                   {previewOf(item, userId)}
                 </ThemedText>
+                {rowLabels.length > 0 && (
+                  <View style={styles.rowLabels}>
+                    {rowLabels.slice(0, 3).map((l) => (
+                      <View key={l.id} style={[styles.rowLabelPill, { backgroundColor: l.color }]}>
+                        <ThemedText style={styles.rowLabelText} numberOfLines={1}>
+                          {l.name}
+                        </ThemedText>
+                      </View>
+                    ))}
+                    {rowLabels.length > 3 && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        +{rowLabels.length - 3}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
               </View>
               <View style={styles.rowMeta}>
                 <ThemedText type="small" themeColor="textSecondary">
@@ -734,6 +835,208 @@ function MembersPanel({
   );
 }
 
+/** Admin settings for a 1-on-1 chat: labels, access control, and deletion. */
+function PersonPanel({
+  conversationId,
+  personId,
+  name,
+  avatar,
+  onClose,
+  onDeleted,
+}: {
+  conversationId: string;
+  personId: string | null;
+  name: string;
+  avatar: string | null;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const theme = useTheme();
+  const { labels, reload: reloadLabels } = useLabels();
+  const [labelIds, setLabelIds] = useState<Set<string>>(new Set());
+  const [disabled, setDisabled] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(LABEL_COLORS[0]);
+
+  const load = useCallback(async () => {
+    if (!personId) return;
+    const { data: pl } = await sb.from('profile_labels').select('label_id').eq('profile_id', personId);
+    setLabelIds(new Set(((pl as { label_id: string }[] | null) ?? []).map((r) => r.label_id)));
+    const { data: p } = await supabase.from('profiles').select('disabled').eq('id', personId).single();
+    setDisabled(!!(p as { disabled?: boolean } | null)?.disabled);
+  }, [personId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function toggleLabel(id: string) {
+    if (!personId) return;
+    setBusy(id);
+    if (labelIds.has(id)) await unassignLabel(personId, id);
+    else await assignLabel(personId, id);
+    await load();
+    setBusy(null);
+  }
+
+  async function createAndAssign() {
+    if (!newName.trim() || !personId) return;
+    setBusy('new');
+    const lbl = await createLabel(newName.trim(), newColor);
+    if (lbl) await assignLabel(personId, lbl.id);
+    setNewName('');
+    setNewColor(LABEL_COLORS[0]);
+    setAdding(false);
+    await reloadLabels();
+    await load();
+    setBusy(null);
+  }
+
+  async function toggleAccess() {
+    if (!personId) return;
+    const next = !disabled;
+    if (Platform.OS === 'web' && !window.confirm(next ? `Remove ${name}'s access? They'll be signed out and can't use the app until restored.` : `Restore ${name}'s access?`)) return;
+    setBusy('access');
+    await sb.from('profiles').update({ disabled: next }).eq('id', personId);
+    setDisabled(next);
+    setBusy(null);
+  }
+
+  async function deleteChat() {
+    if (Platform.OS === 'web' && !window.confirm(`Delete this conversation with ${name}? This permanently removes the chat and all its messages for everyone. Their account is not affected.`)) return;
+    setBusy('delete');
+    await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)('delete_conversation', { p_conversation: conversationId });
+    onDeleted();
+  }
+
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.chatHeader, { backgroundColor: theme.card, borderBottomColor: DIVIDER }]}>
+        <Pressable onPress={onClose} style={styles.headerAction}>
+          <Ionicons name="arrow-back" size={22} color={theme.text} />
+        </Pressable>
+        <ThemedText style={styles.chatHeaderName} numberOfLines={1}>
+          {name} · settings
+        </ThemedText>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: Spacing.three, gap: Spacing.two, maxWidth: 560, width: '100%', alignSelf: 'center' }}>
+        <View style={{ alignItems: 'center', marginVertical: Spacing.two }}>
+          <BrutalAvatar name={name} uri={avatar} size={72} />
+        </View>
+
+        {!personId ? (
+          <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+            Labels and access controls are unavailable for this conversation.
+          </ThemedText>
+        ) : (
+          <>
+            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.formLabel}>
+              LABELS
+            </ThemedText>
+            <View style={styles.labelWrap}>
+              {labels.map((l) => {
+                const on = labelIds.has(l.id);
+                return (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => toggleLabel(l.id)}
+                    disabled={busy === l.id}
+                    style={[styles.labelChip, { borderColor: l.color, backgroundColor: on ? l.color : 'transparent' }]}>
+                    {busy === l.id ? (
+                      <ActivityIndicator size="small" color={on ? '#fff' : l.color} />
+                    ) : (
+                      <Ionicons name={on ? 'checkmark' : 'add'} size={14} color={on ? '#fff' : l.color} />
+                    )}
+                    <ThemedText style={[styles.labelChipText, { color: on ? '#fff' : theme.text }]}>{l.name}</ThemedText>
+                  </Pressable>
+                );
+              })}
+              {!adding && (
+                <Pressable onPress={() => setAdding(true)} style={[styles.labelChip, { borderColor: theme.border, borderStyle: 'dashed' }]}>
+                  <Ionicons name="add" size={14} color={theme.textSecondary} />
+                  <ThemedText style={[styles.labelChipText, { color: theme.textSecondary }]}>New label</ThemedText>
+                </Pressable>
+              )}
+            </View>
+
+            {adding && (
+              <View style={[styles.newLabelBox, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="Label name"
+                  placeholderTextColor={theme.textSecondary}
+                  autoFocus
+                  style={[styles.nameInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+                />
+                <View style={styles.swatchRow}>
+                  {LABEL_COLORS.map((c) => (
+                    <Pressable
+                      key={c}
+                      onPress={() => setNewColor(c)}
+                      style={[styles.swatch, { backgroundColor: c }, newColor === c && { borderColor: theme.text, borderWidth: 3 }]}
+                    />
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+                  <Pressable
+                    onPress={createAndAssign}
+                    disabled={!newName.trim() || busy === 'new'}
+                    style={[styles.createBtn, { flex: 1, backgroundColor: newName.trim() ? theme.primary : theme.backgroundElement }]}>
+                    {busy === 'new' ? (
+                      <ActivityIndicator size="small" color={theme.primaryText} />
+                    ) : (
+                      <ThemedText style={[styles.createText, { color: newName.trim() ? theme.primaryText : theme.textSecondary }]}>Create & apply</ThemedText>
+                    )}
+                  </Pressable>
+                  <Pressable onPress={() => { setAdding(false); setNewName(''); }} style={[styles.createBtn, { paddingHorizontal: Spacing.three, backgroundColor: theme.backgroundElement }]}>
+                    <ThemedText style={[styles.createText, { color: theme.text }]}>Cancel</ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.formLabel}>
+              ACCESS
+            </ThemedText>
+            <Pressable
+              onPress={toggleAccess}
+              disabled={busy === 'access'}
+              style={({ pressed }) => [styles.settingsRow, { borderColor: disabled ? theme.success : theme.danger }, pressed && { opacity: 0.7 }]}>
+              <Ionicons name={disabled ? 'lock-open-outline' : 'remove-circle-outline'} size={20} color={disabled ? theme.success : theme.danger} />
+              <View style={styles.rowText}>
+                <ThemedText style={[styles.rowName, { color: disabled ? theme.success : theme.danger }]}>
+                  {disabled ? 'Restore access' : 'Remove access'}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {disabled ? 'Currently blocked from the app' : 'Signs them out and blocks the app'}
+                </ThemedText>
+              </View>
+              {busy === 'access' && <ActivityIndicator size="small" color={theme.danger} />}
+            </Pressable>
+          </>
+        )}
+
+        <Pressable
+          onPress={deleteChat}
+          disabled={busy === 'delete'}
+          style={({ pressed }) => [styles.deleteGroup, { borderColor: theme.danger }, pressed && { backgroundColor: theme.danger + '18' }]}>
+          {busy === 'delete' ? (
+            <ActivityIndicator size="small" color={theme.danger} />
+          ) : (
+            <>
+              <Ionicons name="trash" size={18} color={theme.danger} />
+              <ThemedText style={[styles.deleteGroupText, { color: theme.danger }]}>Delete conversation</ThemedText>
+            </>
+          )}
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
 function LeaderboardPane() {
   return (
     <ScrollView style={styles.flex} contentContainerStyle={styles.fullPane}>
@@ -1035,6 +1338,27 @@ const styles = StyleSheet.create({
     height: 40,
   },
   search: { flex: 1, fontSize: 15, outlineStyle: 'none' } as object,
+
+  // filter bar
+  filterBar: { flexGrow: 0, marginBottom: Spacing.two },
+  filterBarInner: { gap: Spacing.one + 2, paddingHorizontal: Spacing.three, alignItems: 'center' },
+  fChip: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.full, borderWidth: 1 },
+  fChipText: { fontSize: 13, fontWeight: '700' },
+  fDot: { width: 8, height: 8, borderRadius: 4 },
+  fDivider: { width: 1, height: 18, marginHorizontal: 2 },
+
+  // label chips on rows
+  rowLabels: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, flexWrap: 'wrap' },
+  rowLabelPill: { maxWidth: 110, paddingHorizontal: 7, paddingVertical: 1, borderRadius: Radius.full },
+  rowLabelText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+
+  // person panel: label editor
+  labelWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one + 2 },
+  labelChip: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.full, borderWidth: 1.75 },
+  labelChipText: { fontSize: 13, fontWeight: '800' },
+  newLabelBox: { padding: Spacing.two, borderRadius: Radius.md, borderWidth: 1.75, gap: Spacing.two, marginTop: Spacing.one },
+  swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  swatch: { width: 30, height: 30, borderRadius: 15, borderColor: 'transparent' },
 
   row: {
     flexDirection: 'row',
