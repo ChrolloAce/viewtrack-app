@@ -6,6 +6,7 @@ import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, Sty
 import { useCreatorsData, type Creator, type ExistingLink, type RequestedLink } from '@/app/(tabs)/creators';
 import { AccountManager } from '@/components/account-manager';
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
+import { OverlaySlider } from '@/components/overlay-slider';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ViewsBreakdown } from '@/components/views-breakdown';
@@ -1264,14 +1265,9 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
                   </View>
                 )}
                 {overlays.length > 0 && (
-                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>OVERLAYS USED</ThemedText>
-                    {overlays.map((o, i) => (
-                      <ThemedText key={i} style={styles.aiBlkText}>
-                        {o.timestamp ? <ThemedText type="small" themeColor="textSecondary">{`${o.timestamp}  `}</ThemedText> : null}
-                        “{o.text}”
-                      </ThemedText>
-                    ))}
+                  <View style={{ gap: Spacing.one }}>
+                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>OVERLAYS</ThemedText>
+                    <OverlaySlider overlays={overlays} videoId={video.id} />
                   </View>
                 )}
                 {!!textOf(analysis.hook) && (

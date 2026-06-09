@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { BrutalCard } from '@/components/brutal';
 import { DesktopFrame } from '@/components/desktop-frame';
+import { OverlaySlider } from '@/components/overlay-slider';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Border, brutalShadow, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -197,18 +198,13 @@ export default function VideoDetail() {
                 </BrutalCard>
               )}
               {overlayItems(analysis).length > 0 && (
-                <BrutalCard style={{ gap: 5 }}>
+                <View style={{ gap: Spacing.one }}>
                   <View style={styles.aiBlockHead}>
                     <Ionicons name="text" size={16} color={theme.accent} />
-                    <ThemedText style={styles.aiBlockLabel}>Overlays used</ThemedText>
+                    <ThemedText style={styles.aiBlockLabel}>Overlays</ThemedText>
                   </View>
-                  {overlayItems(analysis).map((o, i) => (
-                    <ThemedText key={i} style={styles.aiBlockText}>
-                      {o.timestamp ? <ThemedText type="small" themeColor="textSecondary">{`${o.timestamp}  `}</ThemedText> : null}
-                      “{o.text}”
-                    </ThemedText>
-                  ))}
-                </BrutalCard>
+                  <OverlaySlider overlays={overlayItems(analysis)} videoId={videoId ?? undefined} />
+                </View>
               )}
               {!!textOf(analysis.hook) && <AiBlock icon="fish" label="Hook" text={textOf(analysis.hook)!} tint={theme.accent} />}
               {isAdmin && (

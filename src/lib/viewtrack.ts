@@ -138,7 +138,7 @@ export type VideoAnalysis = {
   overlays?: (string | OverlayItem)[];
 };
 
-export type OverlayItem = { timestamp?: string; text?: string };
+export type OverlayItem = { timestamp?: string; text?: string; frameUrl?: string };
 
 /** Analysis fields drift between string and list-of-points — render either. */
 export function textOf(v?: string | string[]): string | undefined {
