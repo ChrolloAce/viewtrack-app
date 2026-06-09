@@ -149,7 +149,7 @@ export function BrutalAvatar({
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-      <ThemedText style={{ fontWeight: '800', fontSize: size * 0.42, color: '#FFFFFF' }}>
+      <ThemedText style={{ fontWeight: '800', fontSize: size * 0.42, lineHeight: size * 0.52, color: '#FFFFFF', textAlign: 'center', includeFontPadding: false }}>
         {initial}
       </ThemedText>
     </View>

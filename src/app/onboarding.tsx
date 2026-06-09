@@ -103,7 +103,7 @@ export default function OnboardingScreen() {
               </ThemedText>
             )}
 
-            <BrutalButton label="CONTINUE" onPress={finish} loading={busy} disabled={!ready} />
+            <BrutalButton label="CONTINUE  →" onPress={finish} loading={busy} disabled={!ready} style={styles.continueBtn} />
             {!ready && (
               <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
                 Add a name and photo to continue.
@@ -144,4 +144,5 @@ const styles = StyleSheet.create({
   optPillText: { fontSize: 10, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   addRow: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 2 },
   addText: { fontSize: 14, fontWeight: '800' },
+  continueBtn: { alignSelf: 'stretch', minHeight: 60, marginTop: Spacing.three },
 });

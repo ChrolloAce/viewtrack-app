@@ -23,6 +23,8 @@ export type ExistingLink = {
   platform?: string | null;
   url?: string | null;
 };
+/** A handle that was added but isn't in ViewTrack yet — pending sync. */
+export type RequestedLink = { id: string; username?: string | null; platform?: string | null; url?: string | null };
 
 const sb = supabase as unknown as { from: (t: string) => any };
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
@@ -44,16 +46,22 @@ export function useCreatorsData() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [projects, setProjects] = useState<VtProject[]>([]);
   const [linksByCreator, setLinksByCreator] = useState<Record<string, ExistingLink[]>>({});
+  const [requestedByCreator, setRequestedByCreator] = useState<Record<string, RequestedLink[]>>({});
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
     const [{ data: profs }, projs, { data: linkRows }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, avatar_url, disabled').eq('role', 'creator').order('full_name'),
       vtProjects(),
-      sb.from('account_links').select('id, profile_id, vt_account_id, vt_project_id, username, platform, url').eq('status', 'linked'),
+      sb.from('account_links').select('id, profile_id, vt_account_id, vt_project_id, username, platform, url, status').in('status', ['linked', 'requested']),
     ]);
     const grouped: Record<string, ExistingLink[]> = {};
+    const requested: Record<string, RequestedLink[]> = {};
     ((linkRows as any[]) ?? []).forEach((r) => {
+      if (r.status === 'requested') {
+        (requested[r.profile_id] ??= []).push({ id: r.id, username: r.username, platform: r.platform, url: r.url });
+        return;
+      }
       if (!r.vt_account_id) return;
       (grouped[r.profile_id] ??= []).push({
         id: r.id,
@@ -67,6 +75,7 @@ export function useCreatorsData() {
     setCreators((profs as unknown as Creator[]) ?? []);
     setProjects(projs);
     setLinksByCreator(grouped);
+    setRequestedByCreator(requested);
     setLoading(false);
   }, []);
 
@@ -74,7 +83,7 @@ export function useCreatorsData() {
     reload();
   }, [reload]);
 
-  return { creators, projects, linksByCreator, loading, reload };
+  return { creators, projects, linksByCreator, requestedByCreator, loading, reload };
 }
 
 export function CreatorsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {

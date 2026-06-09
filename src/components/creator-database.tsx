@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { createElement, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { useCreatorsData, type Creator, type ExistingLink } from '@/app/(tabs)/creators';
+import { useCreatorsData, type Creator, type ExistingLink, type RequestedLink } from '@/app/(tabs)/creators';
 import { AccountManager } from '@/components/account-manager';
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
 import { Skeleton } from '@/components/skeleton';
@@ -92,7 +92,7 @@ function useProgressMap() {
 
 export function CreatorDatabase() {
   const theme = useTheme();
-  const { creators, projects, linksByCreator, loading, reload } = useCreatorsData();
+  const { creators, projects, linksByCreator, requestedByCreator, loading, reload } = useCreatorsData();
   const progress = useProgressMap();
   const [activity, setActivity] = useState<Record<string, CreatorActivity>>({});
   const [actLoading, setActLoading] = useState(true);
@@ -301,6 +301,7 @@ export function CreatorDatabase() {
         ) : (
           rows.map((c) => {
             const links = linksByCreator[c.id] ?? [];
+            const requested = requestedByCreator[c.id] ?? [];
             const p = progress[c.id];
             const act = activity[c.id];
             return (
@@ -337,7 +338,7 @@ export function CreatorDatabase() {
                   <Sparkline values={act?.trend ?? []} avg={act?.avg ?? 0} loading={actLoading} />
                 </View>
                 <View style={styles.colAcc}>
-                  <AccountsCell links={links} />
+                  <AccountsCell links={links} requested={requested} />
                 </View>
                 <View style={styles.colSm}>
                   <View style={styles.lvBox}>
@@ -611,7 +612,7 @@ function BulkAddAccounts({
       ctx.note('loading ViewTrack accounts…');
       const accts = projectId ? await vtAccounts(projectId) : [];
       let added = 0;
-      let missed = 0;
+      let requested = 0;
       for (let i = 0; i < lines.length; i++) {
         const parsed = parseHandle(lines[i]);
         const match = parsed
@@ -633,10 +634,20 @@ function BulkAddAccounts({
           );
           added++;
         } else {
-          missed++;
+          // Not in ViewTrack yet — record it as a requested handle so it isn't
+          // silently lost; it shows under the creator as "requested".
+          await sb.from('account_links').insert({
+            profile_id: targetId,
+            platform: parsed?.platform ?? 'other',
+            username: (parsed?.username ?? lines[i].replace(/^@/, '')).slice(0, 120),
+            url: /^https?:\/\//i.test(lines[i]) ? lines[i] : null,
+            vt_project_id: projectId,
+            status: 'requested',
+          });
+          requested++;
         }
         ctx.progress(i + 1, lines.length);
-        ctx.note(`${added} linked${missed ? ` · ${missed} not found` : ''}`);
+        ctx.note(`${added} linked${requested ? ` · ${requested} requested` : ''}`);
       }
       onDone();
     });
@@ -710,16 +721,18 @@ function BulkAddAccounts({
 }
 
 /** Linked socials — hover to reveal a dropdown; click to open each. */
-function AccountsCell({ links }: { links: ExistingLink[] }) {
+function AccountsCell({ links, requested = [] }: { links: ExistingLink[]; requested?: RequestedLink[] }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
-  if (links.length === 0) {
+  const total = links.length + requested.length;
+  if (total === 0) {
     return (
       <ThemedText type="small" themeColor="textSecondary">
         none
       </ThemedText>
     );
   }
+  const iconSrc = [...links, ...requested].slice(0, 3);
   return (
     <View
       // @ts-expect-error web hover handlers
@@ -727,12 +740,13 @@ function AccountsCell({ links }: { links: ExistingLink[] }) {
       onMouseLeave={() => setOpen(false)}
       style={[styles.accWrap, open && { zIndex: 1000 }]}>
       <Pressable style={[styles.accChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-        {links.slice(0, 3).map((l, i) => (
+        {iconSrc.map((l, i) => (
           <Ionicons key={i} name={(PLATFORM_ICON[l.platform ?? ''] ?? 'link') as never} size={13} color={PLATFORM_COLOR[l.platform ?? ''] ?? theme.textSecondary} />
         ))}
         <ThemedText type="small" style={{ fontWeight: '800' }}>
-          {links.length}
+          {total}
         </ThemedText>
+        {requested.length > 0 && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent }} />}
         <Ionicons name="chevron-down" size={12} color={theme.textSecondary} />
       </Pressable>
       {open && (
@@ -748,6 +762,17 @@ function AccountsCell({ links }: { links: ExistingLink[] }) {
               </ThemedText>
               <Ionicons name="open-outline" size={14} color={theme.textSecondary} />
             </Pressable>
+          ))}
+          {requested.map((l) => (
+            <View key={l.id} style={styles.accDropRow}>
+              <Ionicons name={(PLATFORM_ICON[l.platform ?? ''] ?? 'time-outline') as never} size={16} color={theme.textSecondary} />
+              <ThemedText style={[styles.accDropText, { color: theme.textSecondary }]} numberOfLines={1}>
+                @{(l.username ?? '').replace('@', '') || 'handle'}
+              </ThemedText>
+              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.full, backgroundColor: theme.accent }}>
+                <ThemedText style={{ fontSize: 9, fontWeight: '900', color: '#1A1A1A', letterSpacing: 0.3 }}>requested</ThemedText>
+              </View>
+            </View>
           ))}
         </View>
       )}
