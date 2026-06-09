@@ -20,11 +20,17 @@ if [ -d dist/assets/node_modules ]; then
   sed -i '' 's#assets/node_modules#assets/vendor-fonts#g' dist/_expo/static/css/*.css 2>/dev/null || true
 fi
 
+echo "▸ Adding legal pages (privacy / terms)…"
+cp legal/privacy-policy.html dist/privacy.html
+cp legal/terms-of-service.html dist/terms.html
+
 echo "▸ Writing SPA rewrite config…"
 cat > dist/vercel.json <<'JSON'
 {
   "rewrites": [
-    { "source": "/((?!_expo/|assets/|favicon\\.ico|metadata\\.json).*)", "destination": "/index.html" }
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/((?!_expo/|assets/|favicon\\.ico|metadata\\.json|privacy\\.html|terms\\.html).*)", "destination": "/index.html" }
   ]
 }
 JSON
