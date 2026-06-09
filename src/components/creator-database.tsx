@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ViewsBreakdown } from '@/components/views-breakdown';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
+import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { addPendingCreator, deletePendingCreator, usePendingCreators, type PendingCreator } from '@/lib/creators';
@@ -1193,18 +1194,29 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
     }
   }
 
-  const blocks: { label: string; text?: string; tint: string }[] = [
-    { label: 'Hook', text: textOf(analysis?.hook), tint: theme.accent },
-    { label: 'Summary', text: textOf(analysis?.summary), tint: theme.textSecondary },
-    { label: 'What worked', text: textOf(analysis?.whatWorked), tint: theme.success },
-  ];
   const segs = transcriptSegs(analysis);
   const overlays = overlayItems(analysis);
+  const desktop = useIsDesktop();
+  const embed = Platform.OS === 'web' ? embedUrl(video) : null;
+  const sideBySide = desktop && !!embed;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[styles.analyzeModal, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
+        <Pressable
+          style={[styles.analyzeModal, sideBySide && styles.analyzeModalWide, { backgroundColor: theme.card, borderColor: theme.border }]}
+          onPress={() => {}}>
+          {sideBySide && (
+            <View style={[styles.playerPane, { borderColor: theme.border }]}>
+              {createElement('iframe', {
+                src: embed!,
+                style: { width: '100%', height: '100%', border: 'none', borderRadius: 10, background: '#000' },
+                allow: 'autoplay; encrypted-media; picture-in-picture',
+                allowFullScreen: true,
+              })}
+            </View>
+          )}
+          <View style={{ flex: sideBySide ? 1 : undefined, gap: Spacing.two, minWidth: 0 }}>
           <View style={styles.analyzeTop}>
             {video.thumbnail ? (
               <Image source={{ uri: video.thumbnail }} style={styles.analyzeThumb} contentFit="cover" />
@@ -1224,7 +1236,7 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
             </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: Spacing.two, paddingVertical: Spacing.two }}>
+          <ScrollView style={{ maxHeight: sideBySide ? 540 : 420 }} contentContainerStyle={{ gap: Spacing.two, paddingVertical: Spacing.two }}>
             {loading ? (
               <Skeleton height={80} radius={Radius.md} />
             ) : analyzing ? (
@@ -1262,21 +1274,10 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
                     ))}
                   </View>
                 )}
-                {blocks
-                  .filter((b) => !!b.text)
-                  .map((b) => (
-                    <View key={b.label} style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                      <ThemedText style={[styles.aiBlkLabel, { color: b.tint }]}>{b.label.toUpperCase()}</ThemedText>
-                      <ThemedText style={styles.aiBlkText}>{b.text}</ThemedText>
-                    </View>
-                  ))}
-                {(!!analysis.tone || !!analysis.pacing || !!analysis.topics?.length) && (
-                  <View style={styles.aiChipRow}>
-                    {!!analysis.tone && <View style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>tone: {analysis.tone}</ThemedText></View>}
-                    {!!analysis.pacing && <View style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>pacing: {analysis.pacing}</ThemedText></View>}
-                    {(analysis.topics ?? []).map((t) => (
-                      <View key={t} style={[styles.aiChip, { borderColor: theme.border }]}><ThemedText type="small" style={{ fontWeight: '700' }}>{t}</ThemedText></View>
-                    ))}
+                {!!textOf(analysis.hook) && (
+                  <View style={[styles.aiBlk, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <ThemedText style={[styles.aiBlkLabel, { color: theme.accent }]}>HOOK</ThemedText>
+                    <ThemedText style={styles.aiBlkText}>{textOf(analysis.hook)}</ThemedText>
                   </View>
                 )}
               </>
@@ -1306,10 +1307,29 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
               </Pressable>
             )}
           </View>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
   );
+}
+
+/** Platform embed URL so the video can play inside the analyze modal (web only). */
+function embedUrl(v: VtVideo): string | null {
+  const u = v.url ?? '';
+  if (v.platform === 'tiktok') {
+    const m = u.match(/video\/(\d+)/);
+    return m ? `https://www.tiktok.com/embed/v2/${m[1]}` : null;
+  }
+  if (v.platform === 'instagram') {
+    const m = u.match(/\/(p|reel|reels)\/([A-Za-z0-9_-]+)/);
+    return m ? `https://www.instagram.com/${m[1] === 'p' ? 'p' : 'reel'}/${m[2]}/embed` : null;
+  }
+  if (v.platform === 'youtube') {
+    const m = u.match(/(?:shorts\/|watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+    return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+  }
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -1317,6 +1337,8 @@ const styles = StyleSheet.create({
   dbScroll: { padding: Spacing.four, gap: Spacing.three, width: '100%' },
   analyzeBadge: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   analyzeModal: { width: '100%', maxWidth: 460, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  analyzeModalWide: { maxWidth: 1000, flexDirection: 'row', gap: Spacing.four, alignItems: 'stretch' },
+  playerPane: { width: 360, height: 640, borderRadius: Radius.md, borderWidth: Border.width, overflow: 'hidden', alignSelf: 'center' },
   analyzeTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   analyzeThumb: { width: 44, height: 56, borderRadius: Radius.sm },
   aiBlk: { gap: 4, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },

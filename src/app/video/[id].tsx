@@ -211,17 +211,6 @@ export default function VideoDetail() {
                 </BrutalCard>
               )}
               {!!textOf(analysis.hook) && <AiBlock icon="fish" label="Hook" text={textOf(analysis.hook)!} tint={theme.accent} />}
-              {!!textOf(analysis.summary) && <AiBlock icon="document-text" label="Summary" text={textOf(analysis.summary)!} tint={theme.textSecondary} />}
-              {!!textOf(analysis.whatWorked) && <AiBlock icon="checkmark-circle" label="What worked" text={textOf(analysis.whatWorked)!} tint={theme.success} />}
-              {(!!analysis.tone || !!analysis.pacing || !!analysis.topics?.length) && (
-                <View style={styles.aiChips}>
-                  {!!analysis.tone && <Chip label={`tone: ${analysis.tone}`} />}
-                  {!!analysis.pacing && <Chip label={`pacing: ${analysis.pacing}`} />}
-                  {(analysis.topics ?? []).map((t) => (
-                    <Chip key={t} label={t} />
-                  ))}
-                </View>
-              )}
               {isAdmin && (
                 <Pressable onPress={() => analyze(true)} disabled={analyzing} style={({ pressed }) => [styles.reanalyze, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
                   <Ionicons name="refresh" size={14} color={theme.textSecondary} />
@@ -297,17 +286,6 @@ function AiBlock({ icon, label, text, tint }: { icon: string; label: string; tex
   );
 }
 
-function Chip({ label }: { label: string }) {
-  const theme = useTheme();
-  return (
-    <View style={[styles.chip, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-      <ThemedText type="small" style={{ fontWeight: '700' }}>
-        {label}
-      </ThemedText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center' },
@@ -345,8 +323,6 @@ const styles = StyleSheet.create({
   aiBlockHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   aiBlockLabel: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   aiBlockText: { fontSize: 15, lineHeight: 21, fontWeight: '500' },
-  aiChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one + 2 },
-  chip: { paddingHorizontal: Spacing.two, paddingVertical: 5, borderRadius: Radius.full, borderWidth: 1.5 },
   transcriptHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reanalyze: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: Spacing.two, borderRadius: Radius.full, borderWidth: Border.width, alignSelf: 'center', paddingHorizontal: Spacing.three },
   analyzeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, height: 56, borderRadius: Radius.md, borderWidth: Border.widthThick },
