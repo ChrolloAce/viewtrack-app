@@ -36,19 +36,21 @@ function RootNavigator() {
     }
   }, [session, profile]);
 
-  // A creator must set a name + photo before using the app.
-  const needsOnboarding =
-    !!session &&
-    !!profile &&
-    (profile as { role?: string }).role === 'creator' &&
-    (!(profile.full_name ?? '').trim() || !profile.avatar_url);
+  const role = (profile as { role?: string } | null)?.role;
+  // A new account starts as 'customer'. Before using the app they must set a
+  // name + photo, then join a project with a code (which upgrades their role).
+  const profileIncomplete = !!session && !!profile && (!(profile.full_name ?? '').trim() || !profile.avatar_url);
+  const needsOnboarding = !!session && !!profile && (role === 'creator' || role === 'customer') && profileIncomplete;
+  const needsJoin = !!session && !!profile && role === 'customer' && !profileIncomplete;
 
   // Route guard: signed-out users go to auth; signed-in users never sit on an
-  // auth screen; creators with an incomplete profile are held at onboarding.
+  // auth screen; new accounts are held at onboarding (name+photo) then at
+  // join-project (code) until they've joined.
   useEffect(() => {
     if (loading) return;
     const inAuthGroup = segments[0] === '(auth)';
     const onOnboarding = segments[0] === 'onboarding';
+    const onJoin = segments[0] === 'join-project';
     const onReset = segments[0] === 'reset-password';
     if (!session && !inAuthGroup && !onReset) {
       router.replace('/(auth)/sign-in');
@@ -56,10 +58,12 @@ function RootNavigator() {
       router.replace('/');
     } else if (session && needsOnboarding && !onOnboarding) {
       router.replace('/onboarding');
-    } else if (session && !needsOnboarding && onOnboarding) {
+    } else if (session && !needsOnboarding && needsJoin && !onJoin) {
+      router.replace('/join-project');
+    } else if (session && !needsOnboarding && !needsJoin && (onOnboarding || onJoin)) {
       router.replace('/');
     }
-  }, [session, loading, segments, router, needsOnboarding]);
+  }, [session, loading, segments, router, needsOnboarding, needsJoin]);
 
   if (loading) {
     return (
@@ -82,6 +86,7 @@ function RootNavigator() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="join-project" options={{ gestureEnabled: false }} />
           <Stack.Screen name="reset-password" />
           <Stack.Screen name="thread/[id]" options={{ presentation: 'card' }} />
           <Stack.Screen name="new-channel" options={{ presentation: 'modal' }} />

@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useState } from 'react';
@@ -10,7 +9,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { PENDING_CODE_KEY } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 export default function SignUpScreen() {
@@ -18,17 +16,14 @@ export default function SignUpScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function join() {
+  // Create the account only — no project code here. The route guard walks them
+  // through setting a photo, then joining a project with a code.
+  async function create() {
     setError(null);
     setBusy(true);
-
-    // Stash the code first so it's redeemed whenever the session appears
-    // (immediately, or after email confirmation + first sign-in).
-    await AsyncStorage.setItem(PENDING_CODE_KEY, code.trim());
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
@@ -38,42 +33,25 @@ export default function SignUpScreen() {
 
     if (signUpError) {
       setBusy(false);
-      await AsyncStorage.removeItem(PENDING_CODE_KEY);
       setError(signUpError.message);
       return;
     }
 
     // Emails are auto-confirmed at the DB level, so if signUp didn't hand back a
     // session, just sign in with the same credentials.
-    let session = data.session;
-    if (!session) {
-      const { data: si, error: siErr } = await supabase.auth.signInWithPassword({
+    if (!data.session) {
+      const { error: siErr } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (siErr) {
         setBusy(false);
-        await AsyncStorage.removeItem(PENDING_CODE_KEY);
         setError(siErr.message);
         return;
       }
-      session = si.session;
     }
-
-    // Redeem the invite code now so an invalid one surfaces here.
-    const { error: redeemError } = await supabase.rpc('redeem_code', { p_code: code.trim() });
     setBusy(false);
-    if (redeemError) {
-      await AsyncStorage.removeItem(PENDING_CODE_KEY);
-      setError(
-        redeemError.message === 'invalid_code'
-          ? 'That code is invalid or no longer active.'
-          : redeemError.message,
-      );
-      return;
-    }
-    await AsyncStorage.removeItem(PENDING_CODE_KEY);
-    // Route guard takes over once the profile role updates.
+    // Route guard takes over from here (profile setup → join a project).
   }
 
   return (
@@ -89,9 +67,9 @@ export default function SignUpScreen() {
               contentFit="contain"
             />
 
-            <ThemedText style={styles.title}>join mtp</ThemedText>
+            <ThemedText style={styles.title}>join viewtrack</ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
-              Enter your invite code to get in.
+              Create your account — you'll add your project code next.
             </ThemedText>
 
             <View style={styles.form}>
@@ -111,13 +89,6 @@ export default function SignUpScreen() {
                 value={password}
                 onChangeText={setPassword}
               />
-              <BrutalInput
-                placeholder="Invite code"
-                autoCapitalize="characters"
-                autoCorrect={false}
-                value={code}
-                onChangeText={setCode}
-              />
 
               {error && (
                 <ThemedText type="small" themeColor="danger">
@@ -126,11 +97,11 @@ export default function SignUpScreen() {
               )}
 
               <BrutalButton
-                label="JOIN"
+                label="CREATE ACCOUNT"
                 variant="accent"
-                onPress={join}
+                onPress={create}
                 loading={busy}
-                disabled={!name.trim() || !email.trim() || !password || !code.trim()}
+                disabled={!name.trim() || !email.trim() || !password}
               />
             </View>
 

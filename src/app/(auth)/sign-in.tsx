@@ -67,7 +67,7 @@ export default function SignInScreen() {
 
             <ThemedText style={styles.title}>welcome back</ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
-              Sign in to your MTP account.
+              Sign in to your ViewTrack account.
             </ThemedText>
 
             <View style={styles.form}>
@@ -114,9 +114,9 @@ export default function SignInScreen() {
 
             <Link href="/(auth)/sign-up" style={styles.linkWrap}>
               <ThemedText type="small" themeColor="textSecondary">
-                Have a code?{' '}
+                New here?{' '}
                 <ThemedText type="smallBold" style={{ color: theme.primary }}>
-                  Join with a code →
+                  Create an account →
                 </ThemedText>
               </ThemedText>
             </Link>
