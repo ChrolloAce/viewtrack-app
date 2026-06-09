@@ -26,6 +26,8 @@ export type VtVideo = {
   saves?: number;
   accountUsername: string;
   uploadDate: string | null;
+  /** Direct CDN media file when ViewTrack has one (Instagram); TikTok resolves via vt-download. */
+  downloadUrl?: string | null;
 };
 export type VtMe = { accounts: VtAccount[]; videos: VtVideo[] };
 
@@ -197,6 +199,22 @@ export async function getVideoAnalysis(videoId: string): Promise<{ analysis: Vid
   return data
     ? { analysis: (data.analysis as VideoAnalysis) ?? null, flagged: !!data.flagged, status: (data.status as AnalysisStatus) ?? 'done', error: data.error ?? null }
     : null;
+}
+
+/**
+ * Admin: resolve a direct media URL for downloading a video (or just its audio).
+ * TikTok goes through the vt-download extractor; Instagram falls back to the
+ * downloadUrl ViewTrack already provides (video only — no audio extraction).
+ */
+export async function vtDownloadMedia(video: VtVideo, mode: 'video' | 'audio'): Promise<{ ok: boolean; url?: string; error?: string }> {
+  if (video.platform === 'tiktok') {
+    const { data, error } = await supabase.functions.invoke('vt-download', { body: { url: video.url, mode } });
+    if (error) return { ok: false, error: error.message };
+    const d = data as { ok?: boolean; url?: string; error?: string } | null;
+    return d?.ok && d.url ? { ok: true, url: d.url } : { ok: false, error: d?.error ?? 'failed' };
+  }
+  if (mode === 'video' && video.downloadUrl) return { ok: true, url: video.downloadUrl };
+  return { ok: false, error: mode === 'audio' ? 'Audio extraction is TikTok-only for now.' : 'No media file available for this video.' };
 }
 
 /** Admin: list the creators that exist in ViewTrack (to import into the app). */

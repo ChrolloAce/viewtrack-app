@@ -22,7 +22,7 @@ import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
+import { detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtDownloadMedia, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -1303,11 +1303,12 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
 
           <View style={{ flexDirection: 'row', gap: Spacing.two }}>
             {!!video.url && (
-              <Pressable onPress={() => Linking.openURL(video.url)} style={[styles.addBtn, { flex: 1, backgroundColor: theme.card, borderWidth: Border.width, borderColor: theme.border }]}>
+              <Pressable onPress={() => openUrl(video.url)} style={[styles.addBtn, { flex: 1, backgroundColor: theme.card, borderWidth: Border.width, borderColor: theme.border }]}>
                 <Ionicons name="open-outline" size={16} color={theme.text} />
                 <ThemedText style={[styles.addBtnText, { color: theme.text }]}> Open</ThemedText>
               </Pressable>
             )}
+            {isAdmin && <DownloadButton video={video} />}
             {isAdmin && (
               <Pressable onPress={() => run(!!analysis)} disabled={analyzing} style={[styles.addBtn, { flex: 1.4, flexDirection: 'row', backgroundColor: theme.primary }]}>
                 <Ionicons name="sparkles" size={16} color={theme.primaryText} />
@@ -1320,6 +1321,47 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+/** Download the video file or just its audio — small menu over the button. */
+function DownloadButton({ video }: { video: VtVideo }) {
+  const theme = useTheme();
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState<'video' | 'audio' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function grab(mode: 'video' | 'audio') {
+    setMenu(false);
+    setBusy(mode);
+    setErr(null);
+    const r = await vtDownloadMedia(video, mode);
+    setBusy(null);
+    if (r.ok && r.url) openUrl(r.url);
+    else setErr(r.error ?? 'download failed');
+  }
+
+  return (
+    <>
+      <Pressable onPress={() => setMenu((m) => !m)} disabled={!!busy} style={[styles.addBtn, { flex: 1, backgroundColor: theme.card, borderWidth: Border.width, borderColor: err ? theme.danger : theme.border }]}>
+        {busy ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="download-outline" size={16} color={err ? theme.danger : theme.text} />}
+        <ThemedText style={[styles.addBtnText, { color: err ? theme.danger : theme.text }]} numberOfLines={1}>
+          {' '}{busy ? 'Fetching…' : err ? 'Unavailable' : 'Download'}
+        </ThemedText>
+      </Pressable>
+      {menu && (
+        <View style={[styles.dlMenu, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 4)]}>
+          <Pressable onPress={() => grab('video')} style={({ pressed }) => [styles.dlItem, pressed && { backgroundColor: theme.backgroundElement }]}>
+            <Ionicons name="videocam-outline" size={16} color={theme.text} />
+            <ThemedText style={styles.dlItemText}>Full video (mp4)</ThemedText>
+          </Pressable>
+          <Pressable onPress={() => grab('audio')} style={({ pressed }) => [styles.dlItem, pressed && { backgroundColor: theme.backgroundElement }]}>
+            <Ionicons name="musical-notes-outline" size={16} color={theme.text} />
+            <ThemedText style={styles.dlItemText}>Audio only (mp3)</ThemedText>
+          </Pressable>
+        </View>
+      )}
+    </>
   );
 }
 
@@ -1358,6 +1400,9 @@ const styles = StyleSheet.create({
   segDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.07)' },
   aiBlkText: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
   aiChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  dlMenu: { position: 'absolute', bottom: 52, alignSelf: 'center', borderRadius: Radius.md, borderWidth: Border.width, paddingVertical: 4, minWidth: 200, zIndex: 20 },
+  dlItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  dlItemText: { fontSize: 14, fontWeight: '700' },
   aiChip: { paddingHorizontal: Spacing.two, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1.5 },
   dbHead: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.three },
   dbTitle: { fontSize: 30, lineHeight: 38, fontWeight: '900' },
