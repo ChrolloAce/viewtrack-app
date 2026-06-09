@@ -242,7 +242,8 @@ export type AccountLink = {
   url: string | null;
   vt_account_id: string | null;
   vt_project_id: string | null;
-  status: 'pending' | 'linked' | 'rejected';
+  /** processing = approved, submitted to ViewTrack, waiting for its first sync */
+  status: 'pending' | 'processing' | 'linked' | 'rejected';
   created_at: string;
   profile?: { full_name: string | null; avatar_url: string | null } | null;
 };
@@ -276,11 +277,34 @@ export async function pendingLinks(): Promise<AccountLink[]> {
   const { data } = await sb
     .from('account_links')
     .select('*, profile:profiles!account_links_profile_id_fkey(full_name, avatar_url)')
-    .eq('status', 'pending')
+    .in('status', ['pending', 'processing'])
     .order('created_at', { ascending: false });
   return (data as AccountLink[]) ?? [];
 }
 
+/** Flip 'processing' links to 'linked' once ViewTrack finishes the first sync. */
+export async function reconcileLinks(): Promise<number> {
+  const { data } = await supabase.functions.invoke('viewtrack', { body: { action: 'reconcile' } });
+  return (data as { linked?: number } | null)?.linked ?? 0;
+}
+
 export async function deleteLink(id: string) {
   await sb.from('account_links').delete().eq('id', id);
+}
+
+export type CreatorFilterEntry = { id: string; name: string; keys: string[] };
+
+/** Creators with linked accounts, each with their platform:username keys — for the Videos creator filter. */
+export async function linkedCreatorFilters(): Promise<CreatorFilterEntry[]> {
+  const { data } = await sb
+    .from('account_links')
+    .select('profile_id, platform, username, profile:profiles!account_links_profile_id_fkey(full_name)')
+    .eq('status', 'linked');
+  const map = new Map<string, CreatorFilterEntry>();
+  for (const r of ((data ?? []) as { profile_id: string; platform: string; username: string; profile?: { full_name: string | null } | null }[])) {
+    const e = map.get(r.profile_id) ?? { id: r.profile_id, name: r.profile?.full_name ?? 'Creator', keys: [] };
+    e.keys.push(`${r.platform}:${(r.username ?? '').toLowerCase().replace(/^@/, '')}`);
+    map.set(r.profile_id, e);
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

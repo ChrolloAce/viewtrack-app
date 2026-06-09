@@ -16,6 +16,7 @@ import {
   deleteLink,
   detectPlatform,
   myLinks,
+  reconcileLinks,
   submitLink,
   vtMe,
   type AccountLink,
@@ -40,6 +41,8 @@ export default function MyAccounts() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    // flips this creator's 'processing' links to linked once ViewTrack syncs
+    await reconcileLinks().catch(() => 0);
     const [me, ls] = await Promise.all([vtMe(), uid ? myLinks(uid) : Promise.resolve([])]);
     setAccounts(me.accounts);
     setLinks(ls);
@@ -50,7 +53,7 @@ export default function MyAccounts() {
     load();
   }, [load]);
 
-  const pending = links.filter((l) => l.status === 'pending');
+  const pending = links.filter((l) => l.status === 'pending' || l.status === 'processing');
 
   return (
     <ThemedView style={styles.container}>
@@ -100,7 +103,7 @@ export default function MyAccounts() {
                         @{l.username}
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
-                        {l.platform} · awaiting admin approval
+                        {l.platform} · {l.status === 'processing' ? 'approved — syncing your account ⏳' : 'awaiting admin approval'}
                       </ThemedText>
                     </View>
                     <Pressable

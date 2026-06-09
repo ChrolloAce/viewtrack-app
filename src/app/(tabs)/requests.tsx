@@ -10,7 +10,7 @@ import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/th
 import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
-import { decideLink, pendingLinks, type AccountLink } from '@/lib/viewtrack';
+import { decideLink, pendingLinks, reconcileLinks, type AccountLink } from '@/lib/viewtrack';
 
 export default function RequestsTab() {
   const isDesktop = useIsDesktop();
@@ -27,6 +27,8 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    // flips any 'processing' links whose ViewTrack sync has finished
+    await reconcileLinks().catch(() => 0);
     setReqs(await pendingLinks());
     setLoading(false);
   }, []);
@@ -40,7 +42,8 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
     setNote(null);
     const r = await decideLink(id, approve);
     setBusyId(null);
-    if (r.status === 'not_found') setNote(r.error ?? 'Account not in ViewTrack yet.');
+    if (r.status === 'processing') setNote('✓ Approved — sent to ViewTrack, syncing the account now.');
+    else if (r.status === 'error' || r.status === 'not_found') setNote(r.error ?? 'ViewTrack could not add that account.');
     await load();
   }
 
@@ -69,7 +72,7 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
         ) : (
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomInset + Spacing.three }]}>
             {note && (
-              <ThemedText type="small" themeColor="danger" style={{ textAlign: 'center' }}>
+              <ThemedText type="small" themeColor={note.startsWith('✓') ? 'success' : 'danger'} style={{ textAlign: 'center' }}>
                 {note}
               </ThemedText>
             )}
@@ -90,7 +93,7 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
                         {r.profile?.full_name || 'Creator'}
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                        wants to link {r.platform} · @{r.username}
+                        {r.status === 'processing' ? `${r.platform} · @${r.username}` : `wants to link ${r.platform} · @${r.username}`}
                       </ThemedText>
                     </View>
                   </View>
@@ -101,10 +104,19 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
                       </ThemedText>
                     </Pressable>
                   )}
-                  <View style={styles.actions}>
-                    <BrutalButton label="approve" onPress={() => decide(r.id, true)} loading={busyId === r.id} style={{ flex: 1 }} />
-                    <BrutalButton label="reject" variant="danger" onPress={() => decide(r.id, false)} disabled={busyId === r.id} style={{ flex: 1 }} />
-                  </View>
+                  {r.status === 'processing' ? (
+                    <View style={[styles.processing, { backgroundColor: theme.primaryMuted, borderRadius: Radius.md }]}>
+                      <ActivityIndicator size="small" color={theme.primary} />
+                      <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                        approved — ViewTrack is syncing this account…
+                      </ThemedText>
+                    </View>
+                  ) : (
+                    <View style={styles.actions}>
+                      <BrutalButton label="approve" onPress={() => decide(r.id, true)} loading={busyId === r.id} style={{ flex: 1 }} />
+                      <BrutalButton label="reject" variant="danger" onPress={() => decide(r.id, false)} disabled={busyId === r.id} style={{ flex: 1 }} />
+                    </View>
+                  )}
                 </BrutalCard>
               ))
             )}
@@ -128,4 +140,5 @@ const styles = StyleSheet.create({
   idRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   name: { fontSize: 16, fontWeight: '800' },
   actions: { flexDirection: 'row', gap: Spacing.two },
+  processing: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, paddingVertical: Spacing.two },
 });

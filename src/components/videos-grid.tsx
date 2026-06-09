@@ -13,7 +13,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
-import { vtAnalyzeVideo, vtListVideos, type VtVideo } from '@/lib/viewtrack';
+import { linkedCreatorFilters, vtAnalyzeVideo, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -24,6 +24,14 @@ const SORTS: DropdownOption<Sort>[] = [
   { value: 'recent', label: 'Most recent', icon: 'time' },
   { value: 'views', label: 'Top views', icon: 'eye' },
   { value: 'likes', label: 'Most liked', icon: 'heart' },
+];
+
+type PlatformFilter = 'all' | 'tiktok' | 'instagram' | 'youtube';
+const PLATFORM_FILTERS: DropdownOption<PlatformFilter>[] = [
+  { value: 'all', label: 'All platforms', icon: 'apps-outline' },
+  { value: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
+  { value: 'instagram', label: 'Instagram', icon: 'logo-instagram' },
+  { value: 'youtube', label: 'YouTube', icon: 'logo-youtube' },
 ];
 
 type FlagFilter = 'all' | 'flagged' | 'passing';
@@ -53,6 +61,9 @@ export function VideosGrid() {
   const [sort, setSort] = useState<Sort>('views');
   const [timeframe, setTimeframe] = useState<Timeframe>('7d');
   const [flagFilter, setFlagFilter] = useState<FlagFilter>('all');
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('all');
+  const [creatorFilter, setCreatorFilter] = useState('all');
+  const [creators, setCreators] = useState<CreatorFilterEntry[]>([]);
   const [sectionFilter, setSectionFilter] = useState<Partial<Record<SectionKind, string>>>({});
   const [open, setOpen] = useState<VtVideo | null>(null);
   const [editChecklist, setEditChecklist] = useState(false);
@@ -90,8 +101,17 @@ export function VideosGrid() {
     };
   }, [timeframe]);
 
+  useEffect(() => {
+    linkedCreatorFilters().then(setCreators);
+  }, []);
+
   const sorted = useMemo(() => {
     let arr = [...videos];
+    if (platformFilter !== 'all') arr = arr.filter((v) => v.platform === platformFilter);
+    if (creatorFilter !== 'all') {
+      const keys = new Set(creators.find((c) => c.id === creatorFilter)?.keys ?? []);
+      arr = arr.filter((v) => keys.has(`${v.platform}:${(v.accountUsername ?? '').toLowerCase().replace(/^@/, '')}`));
+    }
     if (flagFilter === 'flagged') arr = arr.filter((v) => flaggedById[v.id] === true);
     else if (flagFilter === 'passing') arr = arr.filter((v) => flaggedById[v.id] === false);
     for (const kind of ['hook', 'body', 'cta', 'outro'] as SectionKind[]) {
@@ -102,7 +122,7 @@ export function VideosGrid() {
     else if (sort === 'likes') arr.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
-  }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo]);
+  }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo, platformFilter, creatorFilter, creators]);
 
   // stat boxes reflect the FILTERED set — pick a hook and these become that hook's numbers
   const stats = useMemo(() => {
@@ -167,6 +187,11 @@ export function VideosGrid() {
           flagFilter={flagFilter}
           setFlagFilter={setFlagFilter}
           hasChecklist={reqs.length > 0}
+          platformFilter={platformFilter}
+          setPlatformFilter={setPlatformFilter}
+          creatorFilter={creatorFilter}
+          setCreatorFilter={setCreatorFilter}
+          creators={creators}
           sectionFilter={sectionFilter}
           setSectionFilter={setSectionFilter}
           sectionOptions={sectionOptions}
@@ -232,6 +257,11 @@ function ScriptFilterButton({
   flagFilter,
   setFlagFilter,
   hasChecklist,
+  platformFilter,
+  setPlatformFilter,
+  creatorFilter,
+  setCreatorFilter,
+  creators,
   sectionFilter,
   setSectionFilter,
   sectionOptions,
@@ -239,6 +269,11 @@ function ScriptFilterButton({
   flagFilter: FlagFilter;
   setFlagFilter: (v: FlagFilter) => void;
   hasChecklist: boolean;
+  platformFilter: PlatformFilter;
+  setPlatformFilter: (v: PlatformFilter) => void;
+  creatorFilter: string;
+  setCreatorFilter: (v: string) => void;
+  creators: CreatorFilterEntry[];
   sectionFilter: Partial<Record<SectionKind, string>>;
   setSectionFilter: Dispatch<SetStateAction<Partial<Record<SectionKind, string>>>>;
   sectionOptions: SectionOptions;
@@ -251,9 +286,19 @@ function ScriptFilterButton({
     { kind: 'cta', label: 'app CTA' },
     { kind: 'outro', label: 'outro' },
   ];
-  const activeCount = (flagFilter !== 'all' ? 1 : 0) + KINDS.filter(({ kind }) => !!sectionFilter[kind]).length;
+  const creatorOptions: DropdownOption<string>[] = [
+    { value: 'all', label: 'All creators', icon: 'people-outline' },
+    ...creators.map((c) => ({ value: c.id, label: c.name, icon: 'person-outline' as const })),
+  ];
+  const activeCount =
+    (flagFilter !== 'all' ? 1 : 0) +
+    (platformFilter !== 'all' ? 1 : 0) +
+    (creatorFilter !== 'all' ? 1 : 0) +
+    KINDS.filter(({ kind }) => !!sectionFilter[kind]).length;
   const clearAll = () => {
     setFlagFilter('all');
+    setPlatformFilter('all');
+    setCreatorFilter('all');
     setSectionFilter({});
   };
 
@@ -268,7 +313,7 @@ function ScriptFilterButton({
           pressed && { transform: [{ translateX: 1 }, { translateY: 1 }] },
         ]}>
         <Ionicons name="funnel-outline" size={15} color={activeCount ? theme.primary : theme.text} />
-        <ThemedText style={[styles.checklistBtnText, activeCount ? { color: theme.primary } : null]}>filter by script</ThemedText>
+        <ThemedText style={[styles.checklistBtnText, activeCount ? { color: theme.primary } : null]}>filters</ThemedText>
         {activeCount > 0 && (
           <View style={[styles.filterCount, { backgroundColor: theme.primary }]}>
             <ThemedText style={styles.filterCountText}>{activeCount}</ThemedText>
@@ -282,11 +327,21 @@ function ScriptFilterButton({
           <Pressable style={styles.panelBackdrop} onPress={() => setOpen(false)}>
             <Pressable style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]} onPress={() => {}}>
               <View style={styles.panelHead}>
-                <ThemedText style={styles.panelTitle}>filter by script</ThemedText>
+                <ThemedText style={styles.panelTitle}>filters</ThemedText>
                 <Pressable onPress={() => setOpen(false)} hitSlop={8}>
                   <Ionicons name="close" size={20} color={theme.textSecondary} />
                 </Pressable>
               </View>
+              <View style={styles.filterRow}>
+                <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>platform</ThemedText>
+                <Dropdown value={platformFilter} options={PLATFORM_FILTERS} onChange={setPlatformFilter} minWidth={240} />
+              </View>
+              {creatorOptions.length > 1 && (
+                <View style={styles.filterRow}>
+                  <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>creator</ThemedText>
+                  <Dropdown value={creatorFilter} options={creatorOptions} onChange={setCreatorFilter} minWidth={240} />
+                </View>
+              )}
               {hasChecklist && (
                 <View style={styles.filterRow}>
                   <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>flags</ThemedText>
