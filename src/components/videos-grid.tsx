@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AnalyzeModal } from '@/components/creator-database';
 import { Dropdown, type DropdownOption } from '@/components/dropdown';
@@ -159,37 +159,34 @@ export function VideosGrid() {
         every tracked video across all creators · tap one to open and run an AI breakdown
       </ThemedText>
 
-      {/* filters + actions */}
+      {/* filters + actions — one tidy row; script filters live in a panel */}
       <View style={styles.controls}>
         <Dropdown value={timeframe} options={TF_OPTS} onChange={setTimeframe} minWidth={170} />
         <Dropdown value={sort} options={SORTS} onChange={setSort} minWidth={170} />
-        {reqs.length > 0 && <Dropdown value={flagFilter} options={FLAG_FILTERS} onChange={setFlagFilter} minWidth={150} />}
-        {sectionOptions.hook.length > 1 && (
-          <Dropdown value={sectionFilter.hook ?? 'all'} options={sectionOptions.hook} onChange={(v) => setSectionFilter((f) => ({ ...f, hook: v === 'all' ? undefined : v }))} minWidth={170} />
-        )}
-        {sectionOptions.body.length > 1 && (
-          <Dropdown value={sectionFilter.body ?? 'all'} options={sectionOptions.body} onChange={(v) => setSectionFilter((f) => ({ ...f, body: v === 'all' ? undefined : v }))} minWidth={170} />
-        )}
-        {sectionOptions.cta.length > 1 && (
-          <Dropdown value={sectionFilter.cta ?? 'all'} options={sectionOptions.cta} onChange={(v) => setSectionFilter((f) => ({ ...f, cta: v === 'all' ? undefined : v }))} minWidth={170} />
-        )}
-        {sectionOptions.outro.length > 1 && (
-          <Dropdown value={sectionFilter.outro ?? 'all'} options={sectionOptions.outro} onChange={(v) => setSectionFilter((f) => ({ ...f, outro: v === 'all' ? undefined : v }))} minWidth={170} />
-        )}
-        <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
-          <Ionicons name="flag-outline" size={15} color={theme.text} />
-          <ThemedText style={styles.checklistBtnText}>checklist</ThemedText>
-        </Pressable>
-        <Pressable onPress={matchScripts} disabled={matching} style={[styles.checklistBtn, { borderColor: theme.border }, matching && { opacity: 0.5 }]}>
-          <Ionicons name="git-compare-outline" size={15} color={theme.text} />
-          <ThemedText style={styles.checklistBtnText}>{matching ? 'matching…' : 'match scripts'}</ThemedText>
-        </Pressable>
-        <Pressable onPress={analyzeAll} disabled={!!batch} style={[styles.checklistBtn, { borderColor: theme.border, backgroundColor: theme.primary }, !!batch && { opacity: 0.6 }]}>
-          <Ionicons name="sparkles" size={15} color={theme.primaryText} />
-          <ThemedText style={[styles.checklistBtnText, { color: theme.primaryText }]}>
-            {batch ? `queuing ${batch.done}/${batch.total}…` : 'analyze all'}
-          </ThemedText>
-        </Pressable>
+        <ScriptFilterButton
+          flagFilter={flagFilter}
+          setFlagFilter={setFlagFilter}
+          hasChecklist={reqs.length > 0}
+          sectionFilter={sectionFilter}
+          setSectionFilter={setSectionFilter}
+          sectionOptions={sectionOptions}
+        />
+        <View style={styles.actions}>
+          <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
+            <Ionicons name="flag-outline" size={15} color={theme.text} />
+            <ThemedText style={styles.checklistBtnText}>checklist</ThemedText>
+          </Pressable>
+          <Pressable onPress={matchScripts} disabled={matching} style={[styles.checklistBtn, { borderColor: theme.border }, matching && { opacity: 0.5 }]}>
+            <Ionicons name="git-compare-outline" size={15} color={theme.text} />
+            <ThemedText style={styles.checklistBtnText}>{matching ? 'matching…' : 'match scripts'}</ThemedText>
+          </Pressable>
+          <Pressable onPress={analyzeAll} disabled={!!batch} style={[styles.checklistBtn, { borderColor: theme.border, backgroundColor: theme.primary }, !!batch && { opacity: 0.6 }]}>
+            <Ionicons name="sparkles" size={15} color={theme.primaryText} />
+            <ThemedText style={[styles.checklistBtnText, { color: theme.primaryText }]}>
+              {batch ? `queuing ${batch.done}/${batch.total}…` : 'analyze all'}
+            </ThemedText>
+          </Pressable>
+        </View>
       </View>
 
       {/* stat boxes — reflect whatever filters are active */}
@@ -224,6 +221,111 @@ export function VideosGrid() {
       {open && <AnalyzeModal video={open} onClose={() => setOpen(null)} />}
       {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
     </ScrollView>
+  );
+}
+
+type SectionOptions = Record<SectionKind, DropdownOption<string>[]>;
+
+/** One compact "filter by script" button — opens a panel of sub-dropdowns
+ *  (flags + hook/body/app-CTA/outro) instead of crowding the toolbar. */
+function ScriptFilterButton({
+  flagFilter,
+  setFlagFilter,
+  hasChecklist,
+  sectionFilter,
+  setSectionFilter,
+  sectionOptions,
+}: {
+  flagFilter: FlagFilter;
+  setFlagFilter: (v: FlagFilter) => void;
+  hasChecklist: boolean;
+  sectionFilter: Partial<Record<SectionKind, string>>;
+  setSectionFilter: Dispatch<SetStateAction<Partial<Record<SectionKind, string>>>>;
+  sectionOptions: SectionOptions;
+}) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const KINDS: { kind: SectionKind; label: string }[] = [
+    { kind: 'hook', label: 'hook' },
+    { kind: 'body', label: 'body' },
+    { kind: 'cta', label: 'app CTA' },
+    { kind: 'outro', label: 'outro' },
+  ];
+  const activeCount = (flagFilter !== 'all' ? 1 : 0) + KINDS.filter(({ kind }) => !!sectionFilter[kind]).length;
+  const clearAll = () => {
+    setFlagFilter('all');
+    setSectionFilter({});
+  };
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [
+          styles.filterBtn,
+          { backgroundColor: theme.card, borderColor: activeCount ? theme.primary : theme.border },
+          brutalShadow(theme.shadow, 3),
+          pressed && { transform: [{ translateX: 1 }, { translateY: 1 }] },
+        ]}>
+        <Ionicons name="funnel-outline" size={15} color={activeCount ? theme.primary : theme.text} />
+        <ThemedText style={[styles.checklistBtnText, activeCount ? { color: theme.primary } : null]}>filter by script</ThemedText>
+        {activeCount > 0 && (
+          <View style={[styles.filterCount, { backgroundColor: theme.primary }]}>
+            <ThemedText style={styles.filterCountText}>{activeCount}</ThemedText>
+          </View>
+        )}
+        <Ionicons name="chevron-down" size={15} color={theme.textSecondary} />
+      </Pressable>
+
+      {open && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <Pressable style={styles.panelBackdrop} onPress={() => setOpen(false)}>
+            <Pressable style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]} onPress={() => {}}>
+              <View style={styles.panelHead}>
+                <ThemedText style={styles.panelTitle}>filter by script</ThemedText>
+                <Pressable onPress={() => setOpen(false)} hitSlop={8}>
+                  <Ionicons name="close" size={20} color={theme.textSecondary} />
+                </Pressable>
+              </View>
+              {hasChecklist && (
+                <View style={styles.filterRow}>
+                  <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>flags</ThemedText>
+                  <Dropdown value={flagFilter} options={FLAG_FILTERS} onChange={setFlagFilter} minWidth={240} />
+                </View>
+              )}
+              {KINDS.map(({ kind, label }) =>
+                sectionOptions[kind].length > 1 ? (
+                  <View key={kind} style={styles.filterRow}>
+                    <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>{label}</ThemedText>
+                    <Dropdown
+                      value={sectionFilter[kind] ?? 'all'}
+                      options={sectionOptions[kind]}
+                      onChange={(v) => setSectionFilter((f) => ({ ...f, [kind]: v === 'all' ? undefined : v }))}
+                      minWidth={240}
+                    />
+                  </View>
+                ) : null,
+              )}
+              {KINDS.every(({ kind }) => sectionOptions[kind].length <= 1) && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  No script clusters yet — analyze some videos, then hit “match scripts”.
+                </ThemedText>
+              )}
+              <View style={styles.panelFoot}>
+                <Pressable onPress={clearAll} hitSlop={6}>
+                  <ThemedText type="smallBold" themeColor="textSecondary">
+                    clear all
+                  </ThemedText>
+                </Pressable>
+                <Pressable onPress={() => setOpen(false)} style={[styles.doneBtn, { backgroundColor: theme.primary }]}>
+                  <ThemedText style={{ color: theme.primaryText, fontWeight: '900', fontSize: 14 }}>done</ThemedText>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -317,6 +419,18 @@ const styles = StyleSheet.create({
   flagText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   checklistBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
   checklistBtnText: { fontSize: 14, fontWeight: '800' },
+  actions: { flexDirection: 'row', gap: Spacing.two, marginLeft: 'auto', flexWrap: 'wrap' },
+  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: Spacing.three, borderRadius: Radius.full, borderWidth: Border.width },
+  filterCount: { minWidth: 19, height: 19, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  filterCountText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  panelBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 140, padding: Spacing.three },
+  panel: { width: '100%', maxWidth: 420, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  panelTitle: { fontSize: 18, lineHeight: 24, fontWeight: '900' },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  filterLabel: { width: 70, fontSize: 12, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
+  panelFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.one },
+  doneBtn: { paddingHorizontal: Spacing.four, height: 38, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
   statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.three },
   statBox: { minWidth: 130, flexGrow: 1, maxWidth: 200, gap: 2, paddingVertical: Spacing.two + 2, paddingHorizontal: Spacing.two + 4, borderRadius: Radius.md, borderWidth: Border.width },
   statTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
