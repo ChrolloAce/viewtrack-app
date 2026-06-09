@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalAvatar, BrutalButton, BrutalCard, BrutalInput } from '@/components/brutal';
@@ -13,8 +13,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { pickAndUploadAvatar } from '@/lib/avatar';
 import { badgeFor } from '@/lib/badges';
-import { emitEarnings } from '@/lib/earnings-bus';
-import { emitLevelUp } from '@/lib/level-up-bus';
 import { supabase } from '@/lib/supabase';
 import { useProgress } from '@/lib/use-progress';
 import { useStats } from '@/lib/use-stats';
@@ -30,19 +28,6 @@ function compact(n: number) {
 
 type Role = 'creator' | 'admin';
 
-const DEMO_LEVELS = [
-  { level: 1, icon: '🌱', title: 'Newcomer', color: '#9CA3AF' },
-  { level: 2, icon: '🎬', title: 'Creator', color: '#3B82F6' },
-  { level: 3, icon: '⭐', title: 'Rising Star', color: '#46C24E' },
-  { level: 4, icon: '🔥', title: 'Influencer', color: '#F4731E' },
-  { level: 5, icon: '💎', title: 'Pro', color: '#A855F7' },
-  { level: 6, icon: '👑', title: 'Elite', color: '#F4A92E' },
-  { level: 7, icon: '🏆', title: 'Legend', color: '#3AA0E8' },
-  { level: 8, icon: '🚀', title: 'Icon', color: '#C04AD6' },
-  { level: 9, icon: '⚡', title: 'Master', color: '#E83B3B' },
-  { level: 10, icon: '🐐', title: 'Hall of Fame', color: '#EF3B2E' },
-];
-const DEMO_BONUSES = [1, 3, 5, 2];
 
 function randomCode(prefix: string, len: number) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -69,19 +54,6 @@ export default function SettingsScreen() {
   const { accounts } = useStats();
   const [links, setLinks] = useState<AccountLink[]>([]);
   const [linkOpen, setLinkOpen] = useState(false);
-  const lvIdx = useRef(0);
-  const bonusIdx = useRef(0);
-
-  function previewLevelUp() {
-    const i = lvIdx.current % (DEMO_LEVELS.length - 1);
-    emitLevelUp({ ...DEMO_LEVELS[i + 1], from: DEMO_LEVELS[i] });
-    lvIdx.current += 1;
-  }
-  function previewBonus() {
-    const n = DEMO_BONUSES[bonusIdx.current % DEMO_BONUSES.length];
-    emitEarnings({ earned: n * 100, newBonuses: n, total: 1000 + n * 100 });
-    bonusIdx.current += 1;
-  }
   const loadLinks = useCallback(async () => {
     if (uid) setLinks(await myLinks(uid));
   }, [uid]);
@@ -249,11 +221,6 @@ export default function SettingsScreen() {
             </Section>
           )}
 
-          <Section title="previews">
-            <BrutalButton label="✨ preview level-up" variant="accent" onPress={previewLevelUp} />
-            <BrutalButton label="💰 preview bonus unlock" variant="neutral" onPress={previewBonus} />
-          </Section>
-
           <ChangePassword />
 
           <BrutalButton label="sign out" variant="danger" onPress={() => supabase.auth.signOut()} />
@@ -328,8 +295,9 @@ function LinkAccountsModal({ visible, onClose, onDone }: { visible: boolean; onC
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[styles.linkSheet, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={styles.modalBackdrop} onPress={onClose}>
+          <Pressable style={[styles.linkSheet, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
           <View style={styles.linkSheetHead}>
             <ThemedText style={styles.linkSheetTitle}>Link accounts</ThemedText>
             <Pressable onPress={onClose} hitSlop={10}>
@@ -371,8 +339,9 @@ function LinkAccountsModal({ visible, onClose, onDone }: { visible: boolean; onC
               {msg}
             </ThemedText>
           )}
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -523,8 +492,8 @@ const styles = StyleSheet.create({
   pencil: { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   section: { gap: Spacing.two },
   connectedHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
-  linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.two + 2, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1.5 },
-  linkBtnText: { fontSize: 12, fontWeight: '900' },
+  linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.three, height: 36, borderRadius: Radius.sm, borderWidth: Border.width },
+  linkBtnText: { fontSize: 13, fontWeight: '800' },
   connectedList: { gap: Spacing.two, marginTop: Spacing.one },
   accountRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
   pendingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
