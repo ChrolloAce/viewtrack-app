@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 // section tables aren't in the generated types — cast around them.
 const sb = supabase as unknown as { from: (t: string) => any };
 
-export type SectionKind = 'hook' | 'body' | 'cta';
+/** cta = the app-download pitch; outro = the closing engagement ask (comment/share). */
+export type SectionKind = 'hook' | 'body' | 'cta' | 'outro';
 export type SectionCluster = { id: string; kind: SectionKind; label: string; canonical: string; video_count: number };
 /** video_id → cluster id per section kind */
 export type VideoSectionMap = Record<string, Partial<Record<SectionKind, string>>>;

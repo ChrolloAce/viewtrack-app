@@ -94,7 +94,7 @@ export function VideosGrid() {
     let arr = [...videos];
     if (flagFilter === 'flagged') arr = arr.filter((v) => flaggedById[v.id] === true);
     else if (flagFilter === 'passing') arr = arr.filter((v) => flaggedById[v.id] === false);
-    for (const kind of ['hook', 'body', 'cta'] as SectionKind[]) {
+    for (const kind of ['hook', 'body', 'cta', 'outro'] as SectionKind[]) {
       const cid = sectionFilter[kind];
       if (cid) arr = arr.filter((v) => byVideo[v.id]?.[kind] === cid);
     }
@@ -119,7 +119,7 @@ export function VideosGrid() {
         .filter((c) => c.kind === kind && c.video_count > 1)
         .map((c) => ({ value: c.id, label: `${c.label.slice(0, 34)}${c.label.length > 34 ? '…' : ''} (${c.video_count})`, icon: 'document-text-outline' as const })),
     ];
-    return { hook: make('hook', 'All hooks'), body: make('body', 'All bodies'), cta: make('cta', 'All CTAs') };
+    return { hook: make('hook', 'All hooks'), body: make('body', 'All bodies'), cta: make('cta', 'All app CTAs'), outro: make('outro', 'All outros') };
   }, [clusters]);
 
   async function analyzeAll() {
@@ -172,6 +172,9 @@ export function VideosGrid() {
         )}
         {sectionOptions.cta.length > 1 && (
           <Dropdown value={sectionFilter.cta ?? 'all'} options={sectionOptions.cta} onChange={(v) => setSectionFilter((f) => ({ ...f, cta: v === 'all' ? undefined : v }))} minWidth={170} />
+        )}
+        {sectionOptions.outro.length > 1 && (
+          <Dropdown value={sectionFilter.outro ?? 'all'} options={sectionOptions.outro} onChange={(v) => setSectionFilter((f) => ({ ...f, outro: v === 'all' ? undefined : v }))} minWidth={170} />
         )}
         <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
           <Ionicons name="flag-outline" size={15} color={theme.text} />
