@@ -31,6 +31,7 @@ import { pickImages, uploadLocalImage } from '@/lib/chat-media';
 import {
   assignLabel,
   createLabel,
+  deleteLabel,
   LABEL_COLORS,
   unassignLabel,
   useLabels,
@@ -416,6 +417,14 @@ function HeaderLabelPill({ personId, onManage }: { personId: string; onManage: (
                     {l.name}
                   </ThemedText>
                   {on && <Ionicons name="checkmark" size={16} color={theme.primary} />}
+                  <Pressable
+                    onPress={(e) => {
+                      (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+                      if (Platform.OS !== 'web' || window.confirm(`Delete the label “${l.name}” everywhere? It comes off every chat.`)) deleteLabel(l.id);
+                    }}
+                    hitSlop={6}>
+                    <Ionicons name="trash-outline" size={15} color={theme.textSecondary} />
+                  </Pressable>
                 </Pressable>
               );
             })}
