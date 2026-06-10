@@ -74,7 +74,17 @@ export async function vtCreator(profileId: string): Promise<CreatorView | null> 
   return await call<CreatorView>({ action: 'creator', profileId });
 }
 
-export type CreatorActivity = { posted: boolean[]; postedCount: number; trend: number[]; avg: number; earnings: number; videos: number };
+export type CreatorActivity = {
+  posted: boolean[];
+  postedCount: number;
+  trend: number[];
+  avg: number;
+  earnings: number;
+  videos: number;
+  views: number;
+  likes: number;
+  comments: number;
+};
 
 /** Posting activity (last 5 days) + 7-day views trend for every creator. One sweep. */
 export async function vtCreatorActivity(): Promise<Record<string, CreatorActivity>> {

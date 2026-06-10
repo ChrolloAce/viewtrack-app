@@ -169,15 +169,36 @@ export function CreatorDatabase() {
 
   const selected = creators.find((c) => c.id === selectedId) ?? null;
 
+  const [colSort, setColSort] = useState<{ col: 'name' | 'views' | 'likes' | 'comments' | 'eng'; desc: boolean }>({ col: 'name', desc: false });
+  const sortBy = (col: typeof colSort.col) =>
+    setColSort((s) => ({ col, desc: s.col === col ? !s.desc : col !== 'name' }));
+
+  const engOf = (a?: CreatorActivity) => (a && a.views > 0 ? ((a.likes + a.comments) / a.views) * 100 : 0);
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return creators.filter((c) => {
+    const filtered = creators.filter((c) => {
       if (status === 'active' && c.disabled) return false;
       if (status === 'removed' && !c.disabled) return false;
       if (q && !(c.full_name ?? '').toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [creators, query, status]);
+    const metric = (c: Creator) => {
+      const a = activity[c.id];
+      if (colSort.col === 'views') return a?.views ?? 0;
+      if (colSort.col === 'likes') return a?.likes ?? 0;
+      if (colSort.col === 'comments') return a?.comments ?? 0;
+      if (colSort.col === 'eng') return engOf(a);
+      return 0;
+    };
+    return filtered.sort((a, b) => {
+      if (colSort.col === 'name') {
+        const cmp = (a.full_name ?? '').localeCompare(b.full_name ?? '');
+        return colSort.desc ? -cmp : cmp;
+      }
+      return colSort.desc ? metric(b) - metric(a) : metric(a) - metric(b);
+    });
+  }, [creators, query, status, colSort, activity]);
 
   // unclaimed invites keyed by their shadow profile — these render as normal
   // rows (full accounts/activity/stats) with an "invited" badge + code.
@@ -198,6 +219,7 @@ export function CreatorDatabase() {
         projects={projects}
         existing={linksByCreator[selected.id] ?? []}
         prog={progress[selected.id]}
+        invite={pendingByShadow[selected.id] ?? null}
         onChanged={reload}
         onBack={() => setSelectedId(null)}
       />
@@ -288,9 +310,13 @@ export function CreatorDatabase() {
       {/* table */}
       <BrutalCard style={styles.table} shadow={3}>
         <View style={[styles.tr, styles.thead, { borderBottomColor: theme.border }]}>
-          <ThemedText style={[styles.th, styles.colName]}>NAME</ThemedText>
+          <SortTh label="NAME" col="name" sort={colSort} onSort={sortBy} style={styles.colName} />
           <ThemedText style={[styles.th, styles.colActivity]}>POST ACTIVITY</ThemedText>
           <ThemedText style={[styles.th, styles.colTrend]}>VIEWS TREND</ThemedText>
+          <SortTh label="VIEWS" col="views" sort={colSort} onSort={sortBy} style={styles.colNum} />
+          <SortTh label="LIKES" col="likes" sort={colSort} onSort={sortBy} style={styles.colNum} />
+          <SortTh label="COMM" col="comments" sort={colSort} onSort={sortBy} style={styles.colNum} />
+          <SortTh label="ENG %" col="eng" sort={colSort} onSort={sortBy} style={styles.colNum} />
           <ThemedText style={[styles.th, styles.colAcc]}>ACCOUNTS</ThemedText>
           <ThemedText style={[styles.th, styles.colSm]}>LEVEL</ThemedText>
           <ThemedText style={[styles.th, styles.colSm]}>STATUS</ThemedText>
@@ -365,7 +391,6 @@ export function CreatorDatabase() {
                       <ThemedText type="small" themeColor="textSecondary">
                         {c.disabled ? 'removed' : invite ? 'invited · not claimed' : 'active'}
                       </ThemedText>
-                      {!!invite && <InviteCodeChip code={invite.invite_code} />}
                     </View>
                   </View>
                 </View>
@@ -375,6 +400,10 @@ export function CreatorDatabase() {
                 <View style={styles.colTrend}>
                   <Sparkline values={act?.trend ?? []} avg={act?.avg ?? 0} loading={actLoading} />
                 </View>
+                <MetricCell value={act ? compact(act.views) : '—'} loading={actLoading} />
+                <MetricCell value={act ? compact(act.likes) : '—'} loading={actLoading} />
+                <MetricCell value={act ? compact(act.comments) : '—'} loading={actLoading} />
+                <MetricCell value={act && act.views > 0 ? `${engOf(act).toFixed(1)}%` : '—'} loading={actLoading} />
                 <View style={styles.colAcc}>
                   <AccountsCell links={links} requested={requested} />
                 </View>
@@ -412,6 +441,25 @@ function parseHandle(line: string): { platform: string | null; username: string 
     return { platform, username: username.toLowerCase() };
   }
   return { platform: null, username: s.replace('@', '').toLowerCase() };
+}
+
+function SortTh({ label, col, sort, onSort, style }: { label: string; col: 'name' | 'views' | 'likes' | 'comments' | 'eng'; sort: { col: string; desc: boolean }; onSort: (c: 'name' | 'views' | 'likes' | 'comments' | 'eng') => void; style?: object }) {
+  const theme = useTheme();
+  const on = sort.col === col;
+  return (
+    <Pressable onPress={() => onSort(col)} style={[style, { flexDirection: 'row', alignItems: 'center', gap: 2 }]}>
+      <ThemedText style={[styles.th, on && { opacity: 1, color: theme.primary }]}>{label}</ThemedText>
+      {on && <Ionicons name={sort.desc ? 'caret-down' : 'caret-up'} size={11} color={theme.primary} />}
+    </Pressable>
+  );
+}
+
+function MetricCell({ value, loading }: { value: string; loading: boolean }) {
+  return (
+    <View style={styles.colNum}>
+      {loading ? <Skeleton width={44} height={14} radius={Radius.sm} /> : <ThemedText style={styles.numText}>{value}</ThemedText>}
+    </View>
+  );
 }
 
 /** Tap-to-copy invite code chip shown on unclaimed (shadow) creator rows. */
@@ -462,6 +510,10 @@ function PendingRow({ pc }: { pc: PendingCreator }) {
       </View>
       <View style={styles.colActivity} />
       <View style={styles.colTrend} />
+      <View style={styles.colNum} />
+      <View style={styles.colNum} />
+      <View style={styles.colNum} />
+      <View style={styles.colNum} />
       <View style={styles.colAcc}>
         <Pressable onPress={copy} style={[styles.codeChip, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
           <ThemedText style={styles.codeText}>{pc.invite_code}</ThemedText>
@@ -899,6 +951,7 @@ function CreatorDetail({
   projects,
   existing,
   prog,
+  invite,
   onChanged,
   onBack,
 }: {
@@ -906,6 +959,7 @@ function CreatorDetail({
   projects: any[];
   existing: any[];
   prog?: Prog;
+  invite?: PendingCreator | null;
   onChanged: () => void;
   onBack: () => void;
 }) {
@@ -1023,7 +1077,13 @@ function CreatorDetail({
                 <Ionicons name="cloud-download-outline" size={14} color={theme.text} />
                 <ThemedText style={[styles.accessChipText, { color: theme.text }]}>{resyncing ? 'Syncing…' : resyncMsg ?? 'Re-sync accounts'}</ThemedText>
               </Pressable>
+              {!!invite && <InviteCodeChip code={invite.invite_code} />}
             </View>
+            {!!invite && (
+              <ThemedText type="small" themeColor="textSecondary">
+                not claimed yet — they sign up in the app with this code to take over this profile
+              </ThemedText>
+            )}
           </View>
         </BrutalCard>
 
@@ -1554,6 +1614,8 @@ const styles = StyleSheet.create({
   colTrend: { flex: 1.1 },
   colAcc: { flex: 1 },
   colSm: { flex: 0.9, alignItems: 'flex-start' },
+  colNum: { flex: 0.7, alignItems: 'flex-start' },
+  numText: { fontSize: 13, fontWeight: '800' },
   colChevron: { width: 24, alignItems: 'center' },
   dots: { flexDirection: 'row', gap: 3 },
   actDot: { width: 11, height: 11, borderRadius: 3, borderWidth: 1 },
