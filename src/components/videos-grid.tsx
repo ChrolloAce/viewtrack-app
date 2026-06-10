@@ -417,7 +417,6 @@ export function VideosGrid() {
               state={analyses[v.id]}
               flagged={flaggedById[v.id] === true}
               siblings={groupCross ? crossMap[v.id] : undefined}
-              crossCount={crossMap[v.id]?.length}
               selected={selectMode ? sel.has(v.id) : undefined}
               onPress={() => (selectMode ? toggleSel(v.id) : setOpen(v))}
             />
@@ -760,7 +759,7 @@ function StatBox({ label, value, icon, danger }: { label: string; value: string;
   );
 }
 
-function VideoCard({ video: v, state, flagged, siblings, crossCount, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; siblings?: VtVideo[]; crossCount?: number; selected?: boolean; onPress: () => void }) {
+function VideoCard({ video: v, flagged, siblings, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; siblings?: VtVideo[]; selected?: boolean; onPress: () => void }) {
   const theme = useTheme();
   // grouped cross-post tile: combined views + an icon per platform
   const combinedViews = siblings?.length ? siblings.reduce((s, x) => s + (x.views ?? 0), 0) : v.views;
@@ -793,13 +792,6 @@ function VideoCard({ video: v, state, flagged, siblings, crossCount, selected, o
             <Ionicons key={p} name={PLATFORM_ICON[p] as never} size={13} color={PLATFORM_COLOR[p] ?? theme.text} />
           ))}
         </View>
-        <AnalyzedBadge state={state} />
-        {!!crossCount && crossCount > 1 && (
-          <View style={[styles.crossBadge, { borderColor: theme.card }]}>
-            <Ionicons name="swap-horizontal" size={11} color="#fff" />
-            <ThemedText style={styles.crossText}>{crossCount}</ThemedText>
-          </View>
-        )}
         {flagged && (
           <View style={[styles.flagBadge, { backgroundColor: theme.danger, borderColor: theme.card }]}>
             <Ionicons name="flag" size={11} color="#fff" />
@@ -818,31 +810,6 @@ function VideoCard({ video: v, state, flagged, siblings, crossCount, selected, o
   );
 }
 
-/** Corner badge reflecting AI-analysis state: analyzing / done / error. */
-function AnalyzedBadge({ state }: { state?: AnalysisState }) {
-  const theme = useTheme();
-  if (!state) return null;
-  if (state.status === 'processing') {
-    return (
-      <View style={[styles.aiBadge, { backgroundColor: theme.accent, borderColor: theme.card }]}>
-        <ActivityIndicator size="small" color="#1A1A1A" />
-      </View>
-    );
-  }
-  if (state.status === 'error') {
-    return (
-      <View style={[styles.aiBadge, { backgroundColor: theme.danger, borderColor: theme.card }]}>
-        <Ionicons name="alert" size={13} color="#fff" />
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.aiBadge, { backgroundColor: theme.success, borderColor: theme.card }]}>
-      <Ionicons name="sparkles" size={12} color="#fff" />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { padding: Spacing.five, paddingBottom: Spacing.six, gap: Spacing.one },
@@ -853,11 +820,8 @@ const styles = StyleSheet.create({
   thumbWrap: { width: '100%', height: 200 },
   thumb: { width: '100%', height: '100%' },
   platBadge: { position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
-  aiBadge: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   viewsOverlay: { position: 'absolute', bottom: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.full },
   flagBadge: { position: 'absolute', bottom: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5 },
-  crossBadge: { position: 'absolute', top: 34, right: 6, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1.5, backgroundColor: '#A855F7' },
-  crossText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   flagText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   checklistBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
   checklistBtnText: { fontSize: 14, fontWeight: '800' },
