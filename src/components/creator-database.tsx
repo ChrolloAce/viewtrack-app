@@ -9,6 +9,7 @@ import { BrutalAvatar, BrutalCard } from '@/components/brutal';
 import { CreatorLabelPill } from '@/components/creator-label-pill';
 import { ChecklistEditor, FlagChecklist } from '@/components/flag-checklist';
 import { OverlaySlider } from '@/components/overlay-slider';
+import { VideoHistory } from '@/components/video-history';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ViewsBreakdown } from '@/components/views-breakdown';
@@ -1397,6 +1398,7 @@ export function AnalyzeModal({ video, siblings, onClose }: { video: VtVideo; sib
           </View>
 
           <ScrollView style={{ maxHeight: sideBySide ? 540 : 420 }} contentContainerStyle={{ gap: Spacing.two, paddingVertical: Spacing.two }}>
+            <VideoHistory videoId={video.id} />
             <CrossPostCard video={video} siblings={siblings} />
             {loading ? (
               <Skeleton height={80} radius={Radius.md} />
