@@ -79,3 +79,15 @@ export async function videoToWav(mediaUrl: string): Promise<Blob> {
 }
 
 export const safeName = (s: string) => (s || 'video').replace(/[^\w.-]/g, '');
+
+/** Open a file picker for local video/audio files (web only). */
+export function pickLocalMedia(): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*,audio/*,.mp4,.mov,.m4a,.mp3,.webm';
+    input.multiple = true;
+    input.onchange = () => resolve(Array.from(input.files ?? []));
+    input.click();
+  });
+}

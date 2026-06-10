@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
-import { decodeAudio, encodeWav, fetchMediaBlob, safeName, saveBlob } from '@/lib/media-tools';
+import { decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { linkedCreatorFilters, vtAnalyzeVideo, vtDownloadMedia, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
@@ -220,6 +220,33 @@ export function VideosGrid() {
     if (failures.length && Platform.OS === 'web') window.alert(`Some downloads failed:\n${[...new Set(failures)].join('\n')}`);
   }
 
+  /** Convert already-downloaded video files to WAV locally — works for the
+   *  Instagram mp4s whose CDN blocks server-side extraction. */
+  async function localExtract() {
+    if (dlMsg || Platform.OS !== 'web') return;
+    const files = await pickLocalMedia();
+    if (!files.length) return;
+    const mergeAll = files.length > 1 && window.confirm(`Merge all ${files.length} files into ONE wav?\n(Cancel = one wav per file)`);
+    const bufs: AudioBuffer[] = [];
+    const failures: string[] = [];
+    for (const [i, f] of files.entries()) {
+      setDlMsg(`extracting ${i + 1}/${files.length}…`);
+      try {
+        const buf = await decodeAudio(f);
+        if (mergeAll) bufs.push(buf);
+        else saveBlob(encodeWav([buf]), `${f.name.replace(/\.[^.]+$/, '')}.wav`);
+      } catch (e) {
+        failures.push(`${f.name}: ${(e as Error).message}`);
+      }
+    }
+    if (mergeAll && bufs.length) {
+      setDlMsg('merging…');
+      saveBlob(encodeWav(bufs), `combined-${bufs.length}-audios.wav`);
+    }
+    setDlMsg(null);
+    if (failures.length) window.alert(`Some files failed:\n${failures.join('\n')}`);
+  }
+
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
 
   return (
@@ -295,6 +322,10 @@ export function VideosGrid() {
               <Pressable onPress={() => batchDownload('merged')} disabled={sel.size < 2} style={[styles.selBtn, { backgroundColor: theme.success }, sel.size < 2 && { opacity: 0.5 }]}>
                 <Ionicons name="git-merge" size={13} color="#fff" />
                 <ThemedText style={[styles.selBtnText, { color: '#fff' }]}>one merged wav</ThemedText>
+              </Pressable>
+              <Pressable onPress={localExtract} style={[styles.selBtn, { backgroundColor: theme.backgroundElement }]}>
+                <Ionicons name="folder-open-outline" size={13} color={theme.text} />
+                <ThemedText style={[styles.selBtnText, { color: theme.text }]}>wav from files…</ThemedText>
               </Pressable>
             </>
           )}
