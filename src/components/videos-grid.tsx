@@ -14,7 +14,7 @@ import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
 import { decodeAudio, encodeWav, fetchMediaBlob, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
-import { linkedCreatorFilters, vtAnalyzeVideo, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
+import { linkedCreatorFilters, vtAnalyzeVideo, vtDownloadMedia, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
