@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { BrutalAvatar } from '@/components/brutal';
 import { CreatorDatabase } from '@/components/creator-database';
@@ -336,9 +336,12 @@ function ChatConsole() {
                     <Ionicons name="people-outline" size={22} color={theme.text} />
                   </Pressable>
                 ) : isAdmin ? (
-                  <Pressable onPress={() => setPanel(true)} style={styles.headerAction}>
-                    <Ionicons name="ellipsis-horizontal" size={22} color={theme.text} />
-                  </Pressable>
+                  <>
+                    {!!selected.personId && <HeaderLabelPill personId={selected.personId} onManage={() => setPanel(true)} />}
+                    <Pressable onPress={() => setPanel(true)} style={styles.headerAction}>
+                      <Ionicons name="ellipsis-horizontal" size={22} color={theme.text} />
+                    </Pressable>
+                  </>
                 ) : null}
               </View>
               <ChatThread
@@ -358,6 +361,78 @@ function ChatConsole() {
         )}
       </View>
     </View>
+  );
+}
+
+/** WhatsApp-style label pill in the chat header: shows the person's label dot +
+ *  name; click → assign/unassign labels right there, no person panel needed. */
+function HeaderLabelPill({ personId, onManage }: { personId: string; onManage: () => void }) {
+  const theme = useTheme();
+  const { labels } = useLabels();
+  const { map: profileLabels } = useProfileLabels();
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const ref = useRef<View>(null);
+  const ids = profileLabels[personId] ?? [];
+  const mine = labels.filter((l) => ids.includes(l.id));
+  const first = mine[0];
+
+  const openMenu = () => {
+    ref.current?.measureInWindow((x, y, w, h) => {
+      setAnchor({ x, y, w, h });
+      setOpen(true);
+    });
+  };
+
+  return (
+    <>
+      <Pressable
+        ref={ref}
+        onPress={openMenu}
+        style={({ pressed }) => [styles.labelPill, { backgroundColor: theme.backgroundElement, borderColor: DIVIDER }, pressed && { opacity: 0.7 }]}>
+        {first ? <View style={[styles.fDot, { backgroundColor: first.color }]} /> : <Ionicons name="pricetag-outline" size={13} color={theme.textSecondary} />}
+        <ThemedText type="smallBold" style={{ color: first ? theme.text : theme.textSecondary, maxWidth: 140 }} numberOfLines={1}>
+          {first ? (mine.length > 1 ? `${first.name} +${mine.length - 1}` : first.name) : 'label'}
+        </ThemedText>
+        <Ionicons name="chevron-down" size={13} color={theme.textSecondary} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setOpen(false)}>
+          <View
+            style={[
+              styles.labelMenu,
+              { backgroundColor: theme.card, borderColor: theme.border, top: anchor.y + anchor.h + 6, left: Math.max(8, anchor.x + anchor.w - 230) },
+            ]}>
+            {labels.map((l) => {
+              const on = ids.includes(l.id);
+              return (
+                <Pressable
+                  key={l.id}
+                  onPress={async () => (on ? unassignLabel(personId, l.id) : assignLabel(personId, l.id))}
+                  style={({ pressed }) => [styles.labelMenuItem, pressed && { backgroundColor: theme.backgroundElement }]}>
+                  <View style={[styles.fDot, { backgroundColor: l.color }]} />
+                  <ThemedText style={styles.labelMenuText} numberOfLines={1}>
+                    {l.name}
+                  </ThemedText>
+                  {on && <Ionicons name="checkmark" size={16} color={theme.primary} />}
+                </Pressable>
+              );
+            })}
+            {labels.length > 0 && <View style={[styles.labelMenuDivider, { backgroundColor: DIVIDER }]} />}
+            <Pressable
+              onPress={() => {
+                setOpen(false);
+                onManage();
+              }}
+              style={({ pressed }) => [styles.labelMenuItem, pressed && { backgroundColor: theme.backgroundElement }]}>
+              <Ionicons name="add" size={15} color={theme.textSecondary} />
+              <ThemedText style={[styles.labelMenuText, { color: theme.textSecondary }]}>new label…</ThemedText>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -496,28 +571,18 @@ function ConversationList({
                 <BrutalAvatar name={d.name} uri={d.avatar} size={46} />
               )}
               <View style={styles.rowText}>
-                <ThemedText style={styles.rowName} numberOfLines={1}>
-                  {d.name}
-                </ThemedText>
+                {/* WhatsApp-style: name with small colored label dots after it */}
+                <View style={styles.rowTitleRow}>
+                  <ThemedText style={[styles.rowName, { flexShrink: 1 }]} numberOfLines={1}>
+                    {d.name}
+                  </ThemedText>
+                  {rowLabels.slice(0, 3).map((l) => (
+                    <View key={l.id} style={[styles.rowDot, { backgroundColor: l.color }]} />
+                  ))}
+                </View>
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                   {previewOf(item, userId)}
                 </ThemedText>
-                {rowLabels.length > 0 && (
-                  <View style={styles.rowLabels}>
-                    {rowLabels.slice(0, 3).map((l) => (
-                      <View key={l.id} style={[styles.rowLabelPill, { backgroundColor: l.color }]}>
-                        <ThemedText style={styles.rowLabelText} numberOfLines={1}>
-                          {l.name}
-                        </ThemedText>
-                      </View>
-                    ))}
-                    {rowLabels.length > 3 && (
-                      <ThemedText type="small" themeColor="textSecondary">
-                        +{rowLabels.length - 3}
-                      </ThemedText>
-                    )}
-                  </View>
-                )}
               </View>
               <View style={styles.rowMeta}>
                 <ThemedText type="small" themeColor="textSecondary">
@@ -1348,9 +1413,13 @@ const styles = StyleSheet.create({
   fDivider: { width: 1, height: 18, marginHorizontal: 2 },
 
   // label chips on rows
-  rowLabels: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, flexWrap: 'wrap' },
-  rowLabelPill: { maxWidth: 110, paddingHorizontal: 7, paddingVertical: 1, borderRadius: Radius.full },
-  rowLabelText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  rowTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  rowDot: { width: 8, height: 8, borderRadius: 4 },
+  labelPill: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: Radius.full, borderWidth: 1, marginRight: 2 },
+  labelMenu: { position: 'absolute', width: 230, borderRadius: Radius.md, borderWidth: 1, paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  labelMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, paddingVertical: 9 },
+  labelMenuText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  labelMenuDivider: { height: 1, marginVertical: 4 },
 
   // person panel: label editor
   labelWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one + 2 },

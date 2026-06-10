@@ -158,6 +158,13 @@ export function CreatorDatabase() {
     });
   }, [creators, query, status]);
 
+  // unclaimed invites keyed by their shadow profile — these render as normal
+  // rows (full accounts/activity/stats) with an "invited" badge + code.
+  const pendingByShadow = useMemo(
+    () => Object.fromEntries(pending.filter((pc) => pc.shadow_profile_id && !pc.claimed_by).map((pc) => [pc.shadow_profile_id!, pc])),
+    [pending],
+  );
+
   const activeCount = creators.filter((c) => !c.disabled).length;
   const noAccounts = creators.filter((c) => (linksByCreator[c.id] ?? []).length === 0).length;
   const totalEarnings = Object.values(activity).reduce((s, a) => s + (a.earnings ?? 0), 0);
@@ -265,9 +272,10 @@ export function CreatorDatabase() {
           <ThemedText style={[styles.th, styles.colSm]}>STATUS</ThemedText>
           <View style={styles.colChevron} />
         </View>
-        {/* manually-added, not-yet-claimed creators */}
+        {/* legacy invited creators with no shadow profile (new invites appear as normal rows) */}
         {status !== 'removed' &&
           pending
+            .filter((pc) => !pc.shadow_profile_id)
             .filter((pc) => !query.trim() || pc.full_name.toLowerCase().includes(query.trim().toLowerCase()))
             .map((pc) => <PendingRow key={pc.id} pc={pc} />)}
         {listLoading ? (
@@ -308,6 +316,7 @@ export function CreatorDatabase() {
             const requested = requestedByCreator[c.id] ?? [];
             const p = progress[c.id];
             const act = activity[c.id];
+            const invite = pendingByShadow[c.id];
             return (
               <Pressable
                 key={c.id}
@@ -328,10 +337,11 @@ export function CreatorDatabase() {
                       {c.full_name || 'Unnamed creator'}
                     </ThemedText>
                     <View style={styles.statusRow}>
-                      <View style={[styles.dot, { backgroundColor: c.disabled ? theme.danger : theme.success }]} />
+                      <View style={[styles.dot, { backgroundColor: c.disabled ? theme.danger : invite ? '#F59E0B' : theme.success }]} />
                       <ThemedText type="small" themeColor="textSecondary">
-                        {c.disabled ? 'removed' : 'active'}
+                        {c.disabled ? 'removed' : invite ? 'invited · not claimed' : 'active'}
                       </ThemedText>
+                      {!!invite && <InviteCodeChip code={invite.invite_code} />}
                     </View>
                   </View>
                 </View>
@@ -378,6 +388,25 @@ function parseHandle(line: string): { platform: string | null; username: string 
     return { platform, username: username.toLowerCase() };
   }
   return { platform: null, username: s.replace('@', '').toLowerCase() };
+}
+
+/** Tap-to-copy invite code chip shown on unclaimed (shadow) creator rows. */
+function InviteCodeChip({ code }: { code: string }) {
+  const theme = useTheme();
+  const [copied, setCopied] = useState(false);
+  return (
+    <Pressable
+      onPress={(e) => {
+        (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+        if (Platform.OS === 'web') (navigator as unknown as { clipboard?: { writeText: (s: string) => void } }).clipboard?.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      style={[styles.codeChip, { borderColor: theme.border, backgroundColor: theme.backgroundElement, marginLeft: 6 }]}>
+      <ThemedText style={styles.codeText}>{code}</ThemedText>
+      <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={12} color={theme.textSecondary} />
+    </Pressable>
+  );
 }
 
 /** A manually-added creator who hasn't signed up yet — shows the invite code. */

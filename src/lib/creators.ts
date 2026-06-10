@@ -3,22 +3,27 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const sb = supabase as unknown as { from: (t: string) => any };
-// must .bind — a bare supabase.rpc loses its `this` and throws inside supabase-js.
-const rpc = supabase.rpc.bind(supabase) as unknown as (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: { message: string } | null }>;
 
 export type PendingCreator = {
   id: string;
   full_name: string;
   invite_code: string;
   claimed_by: string | null;
+  /** the real profile created at invite time — accounts/stats attach to it; merged on claim */
+  shadow_profile_id: string | null;
   created_at: string;
 };
 
-/** Admin: add a creator manually → returns their invite code to share. */
+/**
+ * Admin: add a creator manually → creates a real (shadow) profile right away
+ * so accounts, videos and activity work before they claim, and returns the
+ * invite code to share. Claiming merges the shadow into their account.
+ */
 export async function addPendingCreator(name: string): Promise<{ code?: string; error?: string }> {
-  const { data, error } = await rpc('add_pending_creator', { p_name: name });
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'add-creator', name } });
   if (error) return { error: error.message };
-  return { code: (data as PendingCreator)?.invite_code };
+  const d = data as { ok?: boolean; code?: string; error?: string } | null;
+  return d?.ok ? { code: d.code } : { error: d?.error ?? 'failed' };
 }
 
 export async function deletePendingCreator(id: string) {
