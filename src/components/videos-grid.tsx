@@ -291,6 +291,7 @@ export function VideosGrid() {
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
 
   return (
+    <View style={styles.flex}>
     <ScrollView style={styles.flex} contentContainerStyle={styles.scroll}>
       <ThemedText style={styles.title}>Videos</ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
@@ -343,47 +344,6 @@ export function VideosGrid() {
         </View>
       </View>
 
-      {/* selection action bar — download selected as mp4s / WAVs / one merged WAV */}
-      {selectMode && (
-        <View style={[styles.selBar, { backgroundColor: theme.text }]}>
-          <ThemedText style={[styles.selBarText, { color: theme.background }]}>{sel.size} selected</ThemedText>
-          {dlMsg ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <ActivityIndicator size="small" color={theme.background} />
-              <ThemedText style={[styles.selBarText, { color: theme.background }]}>{dlMsg}</ThemedText>
-            </View>
-          ) : (
-            <>
-              <Pressable onPress={() => batchDownload('videos')} disabled={!sel.size} style={[styles.selBtn, { backgroundColor: theme.primary }, !sel.size && { opacity: 0.5 }]}>
-                <Ionicons name="videocam" size={13} color={theme.primaryText} />
-                <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>videos</ThemedText>
-              </Pressable>
-              <Pressable onPress={() => batchDownload('audios')} disabled={!sel.size} style={[styles.selBtn, { backgroundColor: theme.primary }, !sel.size && { opacity: 0.5 }]}>
-                <Ionicons name="musical-notes" size={13} color={theme.primaryText} />
-                <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>audios (wav)</ThemedText>
-              </Pressable>
-              <Pressable onPress={() => batchDownload('merged')} disabled={sel.size < 2} style={[styles.selBtn, { backgroundColor: theme.success }, sel.size < 2 && { opacity: 0.5 }]}>
-                <Ionicons name="git-merge" size={13} color="#fff" />
-                <ThemedText style={[styles.selBtnText, { color: '#fff' }]}>one merged wav</ThemedText>
-              </Pressable>
-              <Pressable onPress={localExtract} style={[styles.selBtn, { backgroundColor: theme.backgroundElement }]}>
-                <Ionicons name="folder-open-outline" size={13} color={theme.text} />
-                <ThemedText style={[styles.selBtnText, { color: theme.text }]}>wav from files…</ThemedText>
-              </Pressable>
-            </>
-          )}
-          <Pressable
-            onPress={() => {
-              setSelectMode(false);
-              setSel(new Set());
-            }}
-            style={{ marginLeft: 'auto' }}
-            hitSlop={8}>
-            <Ionicons name="close" size={18} color={theme.background} />
-          </Pressable>
-        </View>
-      )}
-
       {/* stat boxes — reflect whatever filters are active */}
       {!loading && (
         <View style={styles.statRow}>
@@ -425,6 +385,51 @@ export function VideosGrid() {
       {open && <AnalyzeModal video={open} siblings={crossMap[open.id]} onClose={() => setOpen(null)} />}
       {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
     </ScrollView>
+
+    {/* floating neo-brutalist selection bar */}
+    {selectMode && (
+      <View style={[styles.floatBar, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]}>
+        <View style={[styles.selCount, { backgroundColor: theme.primary, borderColor: theme.border }]}>
+          <ThemedText style={[styles.selCountText, { color: theme.primaryText }]}>{sel.size}</ThemedText>
+        </View>
+        <ThemedText style={styles.selBarText}>selected</ThemedText>
+        {dlMsg ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <ThemedText style={styles.selBarText}>{dlMsg}</ThemedText>
+          </View>
+        ) : (
+          <>
+            <Pressable onPress={() => batchDownload('videos')} disabled={!sel.size} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 2), !sel.size && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="videocam" size={13} color={theme.primaryText} />
+              <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>videos</ThemedText>
+            </Pressable>
+            <Pressable onPress={() => batchDownload('audios')} disabled={!sel.size} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 2), !sel.size && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="musical-notes" size={13} color={theme.primaryText} />
+              <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>audios (wav)</ThemedText>
+            </Pressable>
+            <Pressable onPress={() => batchDownload('merged')} disabled={sel.size < 2} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.success, borderColor: theme.border }, brutalShadow(theme.shadow, 2), sel.size < 2 && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="git-merge" size={13} color="#fff" />
+              <ThemedText style={[styles.selBtnText, { color: '#fff' }]}>one merged wav</ThemedText>
+            </Pressable>
+            <Pressable onPress={localExtract} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+              <Ionicons name="folder-open-outline" size={13} color={theme.text} />
+              <ThemedText style={[styles.selBtnText, { color: theme.text }]}>wav from files…</ThemedText>
+            </Pressable>
+          </>
+        )}
+        <Pressable
+          onPress={() => {
+            setSelectMode(false);
+            setSel(new Set());
+          }}
+          style={({ pressed }) => [styles.selClose, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}
+          hitSlop={8}>
+          <Ionicons name="close" size={16} color={theme.text} />
+        </Pressable>
+      </View>
+    )}
+    </View>
   );
 }
 
@@ -707,10 +712,14 @@ const styles = StyleSheet.create({
   filterLabel: { width: 70, fontSize: 12, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   panelFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.one },
   doneBtn: { paddingHorizontal: Spacing.four, height: 38, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  selBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, borderRadius: Radius.md, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, marginBottom: Spacing.three },
+  floatBar: { position: 'absolute', bottom: 24, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, maxWidth: '94%', borderRadius: Radius.lg, borderWidth: Border.widthThick, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, zIndex: 40 },
+  selCount: { minWidth: 28, height: 28, borderRadius: 14, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  selCountText: { fontSize: 13, fontWeight: '900' },
   selBarText: { fontSize: 14, fontWeight: '800' },
-  selBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 32, borderRadius: Radius.full },
+  selBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 34, borderRadius: Radius.sm, borderWidth: Border.width },
   selBtnText: { fontSize: 13, fontWeight: '800' },
+  selClose: { width: 30, height: 30, borderRadius: 15, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  pressIn: { transform: [{ translateX: 2 }, { translateY: 2 }] },
   selCheck: { position: 'absolute', top: 6, left: '50%', marginLeft: -12, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.three },
   statBox: { minWidth: 130, flexGrow: 1, maxWidth: 200, gap: 2, paddingVertical: Spacing.two + 2, paddingHorizontal: Spacing.two + 4, borderRadius: Radius.md, borderWidth: Border.width },

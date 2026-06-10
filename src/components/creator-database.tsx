@@ -227,6 +227,7 @@ export function CreatorDatabase() {
   }
 
   return (
+    <View style={styles.flex}>
     <ScrollView style={styles.flex} contentContainerStyle={styles.dbScroll}>
       <View style={styles.dbHead}>
         <View style={{ flex: 1 }}>
@@ -262,24 +263,6 @@ export function CreatorDatabase() {
           <ThemedText type="small" style={{ color: theme.primary, fontWeight: '700', flex: 1 }}>
             {syncMsg}
           </ThemedText>
-        </View>
-      )}
-
-      {picked.size > 0 && (
-        <View style={[styles.selBar, { backgroundColor: theme.text, borderColor: theme.border }]}>
-          <ThemedText style={[styles.selBarText, { color: theme.background }]}>{picked.size} selected</ThemedText>
-          <Pressable onPress={() => bulkAccess(true)} style={[styles.selBarBtn, { backgroundColor: theme.danger }]}>
-            <ThemedText style={styles.selBarBtnText}>Remove access</ThemedText>
-          </Pressable>
-          <Pressable onPress={() => bulkAccess(false)} style={[styles.selBarBtn, { backgroundColor: theme.success }]}>
-            <ThemedText style={styles.selBarBtnText}>Restore</ThemedText>
-          </Pressable>
-          <Pressable onPress={bulkDelete} disabled={deleting} style={[styles.selBarBtn, { backgroundColor: '#7F1D1D' }, deleting && { opacity: 0.6 }]}>
-            <ThemedText style={styles.selBarBtnText}>{deleting ? 'Deleting…' : 'Delete forever'}</ThemedText>
-          </Pressable>
-          <Pressable onPress={() => setPicked(new Set())} style={[styles.selBarBtn, { backgroundColor: theme.backgroundElement }]}>
-            <ThemedText style={[styles.selBarBtnText, { color: theme.text }]}>Clear</ThemedText>
-          </Pressable>
         </View>
       )}
 
@@ -427,6 +410,29 @@ export function CreatorDatabase() {
         )}
       </BrutalCard>
     </ScrollView>
+
+    {/* floating neo-brutalist bulk-action bar */}
+    {picked.size > 0 && (
+      <View style={[styles.floatBar, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]}>
+        <View style={[styles.selCount, { backgroundColor: theme.primary, borderColor: theme.border }]}>
+          <ThemedText style={[styles.selCountText, { color: theme.primaryText }]}>{picked.size}</ThemedText>
+        </View>
+        <ThemedText style={styles.selBarText}>selected</ThemedText>
+        <Pressable onPress={() => bulkAccess(true)} style={({ pressed }) => [styles.selActBtn, { backgroundColor: theme.danger, borderColor: theme.border }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+          <ThemedText style={styles.selActText}>Remove access</ThemedText>
+        </Pressable>
+        <Pressable onPress={() => bulkAccess(false)} style={({ pressed }) => [styles.selActBtn, { backgroundColor: theme.success, borderColor: theme.border }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+          <ThemedText style={styles.selActText}>Restore</ThemedText>
+        </Pressable>
+        <Pressable onPress={bulkDelete} disabled={deleting} style={({ pressed }) => [styles.selActBtn, { backgroundColor: '#7F1D1D', borderColor: theme.border }, brutalShadow(theme.shadow, 2), deleting && { opacity: 0.6 }, pressed && styles.pressIn]}>
+          <ThemedText style={styles.selActText}>{deleting ? 'Deleting…' : 'Delete forever'}</ThemedText>
+        </Pressable>
+        <Pressable onPress={() => setPicked(new Set())} style={({ pressed }) => [styles.selCloseBtn, { borderColor: theme.border }, pressed && { opacity: 0.6 }]} hitSlop={8}>
+          <Ionicons name="close" size={16} color={theme.text} />
+        </Pressable>
+      </View>
+    )}
+    </View>
   );
 }
 
@@ -1641,6 +1647,13 @@ const styles = StyleSheet.create({
   resyncChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 30, borderRadius: Radius.sm, borderWidth: 1.5, alignSelf: 'flex-start' },
   resyncText: { fontSize: 12, fontWeight: '800' },
   selBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
+  floatBar: { position: 'absolute', bottom: 24, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, maxWidth: '94%', borderRadius: Radius.lg, borderWidth: Border.widthThick, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, zIndex: 40 },
+  selCount: { minWidth: 28, height: 28, borderRadius: 14, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  selCountText: { fontSize: 13, fontWeight: '900' },
+  selActBtn: { paddingHorizontal: Spacing.two + 4, height: 34, borderRadius: Radius.sm, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center' },
+  selActText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  selCloseBtn: { width: 30, height: 30, borderRadius: 15, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  pressIn: { transform: [{ translateX: 2 }, { translateY: 2 }] },
   selBarText: { flex: 1, fontSize: 14, fontWeight: '900', paddingLeft: Spacing.one },
   selBarBtn: { paddingHorizontal: Spacing.three, height: 34, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   selBarBtnText: { fontSize: 13, fontWeight: '900', color: '#fff' },
