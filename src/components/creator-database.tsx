@@ -6,6 +6,7 @@ import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, Sty
 import { useCreatorsData, type Creator, type ExistingLink, type RequestedLink } from '@/app/(tabs)/creators';
 import { AccountManager } from '@/components/account-manager';
 import { BrutalAvatar, BrutalCard } from '@/components/brutal';
+import { CreatorLabelPill } from '@/components/creator-label-pill';
 import { ChecklistEditor, FlagChecklist } from '@/components/flag-checklist';
 import { OverlaySlider } from '@/components/overlay-slider';
 import { Skeleton } from '@/components/skeleton';
@@ -19,6 +20,7 @@ import { addPendingCreator, deletePendingCreator, usePendingCreators, type Pendi
 import { detectCrossPosts } from '@/lib/crossposts';
 import { recordPayout, usePayouts } from '@/lib/payouts';
 import { badgeFor } from '@/lib/badges';
+import { useLabels, useProfileLabels } from '@/lib/labels';
 import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
 import { safeName, saveBlob, videoToWav } from '@/lib/media-tools';
@@ -169,6 +171,9 @@ export function CreatorDatabase() {
 
   const selected = creators.find((c) => c.id === selectedId) ?? null;
 
+  const { labels } = useLabels();
+  const { map: profileLabels } = useProfileLabels();
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [colSort, setColSort] = useState<{ col: 'name' | 'views' | 'likes' | 'comments' | 'eng'; desc: boolean }>({ col: 'name', desc: false });
   const sortBy = (col: typeof colSort.col) =>
     setColSort((s) => ({ col, desc: s.col === col ? !s.desc : col !== 'name' }));
@@ -181,6 +186,7 @@ export function CreatorDatabase() {
       if (status === 'active' && c.disabled) return false;
       if (status === 'removed' && !c.disabled) return false;
       if (q && !(c.full_name ?? '').toLowerCase().includes(q)) return false;
+      if (labelFilter && !(profileLabels[c.id] ?? []).includes(labelFilter)) return false;
       return true;
     });
     const metric = (c: Creator) => {
@@ -198,7 +204,7 @@ export function CreatorDatabase() {
       }
       return colSort.desc ? metric(b) - metric(a) : metric(a) - metric(b);
     });
-  }, [creators, query, status, colSort, activity]);
+  }, [creators, query, status, colSort, activity, labelFilter, profileLabels]);
 
   // unclaimed invites keyed by their shadow profile — these render as normal
   // rows (full accounts/activity/stats) with an "invited" badge + code.
@@ -288,6 +294,19 @@ export function CreatorDatabase() {
             </Pressable>
           );
         })}
+        {/* group (label) chips — same labels as chat */}
+        {labels.map((l) => {
+          const on = labelFilter === l.id;
+          return (
+            <Pressable
+              key={l.id}
+              onPress={() => setLabelFilter(on ? null : l.id)}
+              style={[styles.filterPill, { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: on ? l.color : theme.border, backgroundColor: on ? l.color : theme.card }]}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: on ? '#fff' : l.color }} />
+              <ThemedText style={[styles.filterText, { color: on ? '#fff' : theme.text }]}>{l.name}</ThemedText>
+            </Pressable>
+          );
+        })}
       </View>
 
       {/* table */}
@@ -366,9 +385,17 @@ export function CreatorDatabase() {
                   </Pressable>
                   <BrutalAvatar name={c.full_name} uri={c.avatar_url} size={38} />
                   <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.nameText} numberOfLines={1}>
-                      {c.full_name || 'Unnamed creator'}
-                    </ThemedText>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <ThemedText style={[styles.nameText, { flexShrink: 1 }]} numberOfLines={1}>
+                        {c.full_name || 'Unnamed creator'}
+                      </ThemedText>
+                      {labels
+                        .filter((l) => (profileLabels[c.id] ?? []).includes(l.id))
+                        .slice(0, 3)
+                        .map((l) => (
+                          <View key={l.id} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: l.color }} />
+                        ))}
+                    </View>
                     <View style={styles.statusRow}>
                       <View style={[styles.dot, { backgroundColor: c.disabled ? theme.danger : invite ? '#F59E0B' : theme.success }]} />
                       <ThemedText type="small" themeColor="textSecondary">
@@ -1084,6 +1111,7 @@ function CreatorDetail({
                 <ThemedText style={[styles.accessChipText, { color: theme.text }]}>{resyncing ? 'Syncing…' : resyncMsg ?? 'Re-sync accounts'}</ThemedText>
               </Pressable>
               {!!invite && <InviteCodeChip code={invite.invite_code} />}
+              <CreatorLabelPill profileId={creator.id} />
             </View>
             {!!invite && (
               <ThemedText type="small" themeColor="textSecondary">

@@ -12,6 +12,7 @@ import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { acctKey, detectCrossPosts } from '@/lib/crossposts';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
+import { useLabels, useProfileLabels } from '@/lib/labels';
 import { captureFrame, decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { supabase } from '@/lib/supabase';
@@ -66,7 +67,10 @@ export function VideosGrid() {
   const [flagFilter, setFlagFilter] = useState<FlagFilter>('all');
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('all');
   const [creatorFilter, setCreatorFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [creators, setCreators] = useState<CreatorFilterEntry[]>([]);
+  const { labels } = useLabels();
+  const { map: profileLabels } = useProfileLabels();
   const [sectionFilter, setSectionFilter] = useState<Partial<Record<SectionKind, string>>>({});
   const [open, setOpen] = useState<VtVideo | null>(null);
   const [editChecklist, setEditChecklist] = useState(false);
@@ -138,6 +142,11 @@ export function VideosGrid() {
       const keys = new Set(creators.find((c) => c.id === creatorFilter)?.keys ?? []);
       arr = arr.filter((v) => keys.has(`${v.platform}:${(v.accountUsername ?? '').toLowerCase().replace(/^@/, '')}`));
     }
+    if (groupFilter !== 'all') {
+      // group = creator label: keep videos whose owner has that label
+      const keys = new Set(creators.filter((c) => (profileLabels[c.id] ?? []).includes(groupFilter)).flatMap((c) => c.keys));
+      arr = arr.filter((v) => keys.has(`${v.platform}:${(v.accountUsername ?? '').toLowerCase().replace(/^@/, '')}`));
+    }
     if (flagFilter === 'flagged') arr = arr.filter((v) => flaggedById[v.id] === true);
     else if (flagFilter === 'passing') arr = arr.filter((v) => flaggedById[v.id] === false);
     for (const kind of ['hook', 'body', 'cta', 'outro'] as SectionKind[]) {
@@ -148,7 +157,7 @@ export function VideosGrid() {
     else if (sort === 'likes') arr.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
-  }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo, platformFilter, creatorFilter, creators]);
+  }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo, platformFilter, creatorFilter, creators, groupFilter, profileLabels]);
 
   // grouped view: one tile per cross-post (the top-performing copy represents
   // the group; its tile shows combined views + every platform's icon)
@@ -336,6 +345,12 @@ export function VideosGrid() {
           hasChecklist={reqs.length > 0}
           groupCross={groupCross}
           setGroupCross={setGroupCross}
+          groupFilter={groupFilter}
+          setGroupFilter={setGroupFilter}
+          groupOptions={[
+            { value: 'all', label: 'All groups', icon: 'pricetags-outline' },
+            ...labels.map((l) => ({ value: l.id, label: l.name, icon: 'pricetag' as const })),
+          ]}
           platformFilter={platformFilter}
           setPlatformFilter={setPlatformFilter}
           creatorFilter={creatorFilter}
@@ -575,6 +590,9 @@ function ScriptFilterButton({
   hasChecklist,
   groupCross,
   setGroupCross,
+  groupFilter,
+  setGroupFilter,
+  groupOptions,
   platformFilter,
   setPlatformFilter,
   creatorFilter,
@@ -589,6 +607,9 @@ function ScriptFilterButton({
   hasChecklist: boolean;
   groupCross: boolean;
   setGroupCross: (v: boolean) => void;
+  groupFilter: string;
+  setGroupFilter: (v: string) => void;
+  groupOptions: DropdownOption<string>[];
   platformFilter: PlatformFilter;
   setPlatformFilter: (v: PlatformFilter) => void;
   creatorFilter: string;
@@ -614,11 +635,13 @@ function ScriptFilterButton({
     (flagFilter !== 'all' ? 1 : 0) +
     (platformFilter !== 'all' ? 1 : 0) +
     (creatorFilter !== 'all' ? 1 : 0) +
+    (groupFilter !== 'all' ? 1 : 0) +
     KINDS.filter(({ kind }) => !!sectionFilter[kind]).length;
   const clearAll = () => {
     setFlagFilter('all');
     setPlatformFilter('all');
     setCreatorFilter('all');
+    setGroupFilter('all');
     setSectionFilter({});
   };
 
@@ -672,6 +695,12 @@ function ScriptFilterButton({
                 <View style={styles.filterRow}>
                   <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>creator</ThemedText>
                   <Dropdown value={creatorFilter} options={creatorOptions} onChange={setCreatorFilter} minWidth={240} />
+                </View>
+              )}
+              {groupOptions.length > 1 && (
+                <View style={styles.filterRow}>
+                  <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>group</ThemedText>
+                  <Dropdown value={groupFilter} options={groupOptions} onChange={setGroupFilter} minWidth={240} />
                 </View>
               )}
               {hasChecklist && (
