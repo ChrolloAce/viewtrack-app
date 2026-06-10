@@ -318,7 +318,7 @@ export async function addAccountByUrl(profileId: string, url: string): Promise<{
 /** Admin: hard-delete a creator — wipes their data and removes the login. */
 export async function deleteCreatorAccount(profileId: string): Promise<{ ok: boolean; error?: string }> {
   const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-creator', profileId } });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: await fnErrorMessage(error) };
   const d = data as { ok?: boolean; error?: string } | null;
   return d?.ok ? { ok: true } : { ok: false, error: d?.error ?? 'failed' };
 }
