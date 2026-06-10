@@ -80,6 +80,19 @@ export async function videoToWav(mediaUrl: string): Promise<Blob> {
 
 export const safeName = (s: string) => (s || 'video').replace(/[^\w.-]/g, '');
 
+/** Snapshot the current frame of a playing <video> element as a PNG (web only). */
+export function captureFrame(video: HTMLVideoElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !canvas.width) return reject(new Error('video not ready yet'));
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('frame capture failed'))), 'image/png');
+  });
+}
+
 /** Open a file picker for local video/audio files (web only). */
 export function pickLocalMedia(): Promise<File[]> {
   return new Promise((resolve) => {

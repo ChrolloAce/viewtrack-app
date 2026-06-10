@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AnalyzeModal } from '@/components/creator-database';
@@ -12,7 +12,7 @@ import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { acctKey, detectCrossPosts } from '@/lib/crossposts';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
-import { decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
+import { captureFrame, decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { supabase } from '@/lib/supabase';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
@@ -76,6 +76,7 @@ export function VideosGrid() {
   const [selectMode, setSelectMode] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [dlMsg, setDlMsg] = useState<string | null>(null);
+  const [frameVid, setFrameVid] = useState<VtVideo | null>(null);
   const { map: analyses } = useVideoAnalyses();
   const { reqs } = useFlagRequirements();
   const { clusters, byVideo, reload: reloadSections } = useSections();
@@ -261,6 +262,33 @@ export function VideosGrid() {
     if (failures.length && Platform.OS === 'web') window.alert(`Some downloads failed:\n${[...new Set(failures)].join('\n')}`);
   }
 
+  /** Download the platform thumbnails of every selected video. */
+  async function downloadThumbs() {
+    const vids = sorted.filter((v) => sel.has(v.id) && v.thumbnail);
+    if (!vids.length || dlMsg) return;
+    for (const [i, v] of vids.entries()) {
+      setDlMsg(`thumbnail ${i + 1}/${vids.length}…`);
+      try {
+        saveBlob(await fetchMediaBlob(v.thumbnail!), `${safeName(v.accountUsername)}-${v.id.slice(-8)}-thumb.jpg`);
+      } catch {
+        window.open(v.thumbnail!, '_blank');
+      }
+    }
+    setDlMsg(null);
+  }
+
+  /** Queue Gemini analysis for every selected video (server-side, badges update live). */
+  async function analyzeSelected() {
+    const vids = sorted.filter((v) => sel.has(v.id) && analyses[v.id]?.status !== 'processing');
+    if (!vids.length || dlMsg) return;
+    for (const [i, v] of vids.entries()) {
+      setDlMsg(`queuing analysis ${i + 1}/${vids.length}…`);
+      await vtAnalyzeVideo(v.id, false);
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    setDlMsg(null);
+  }
+
   /** Convert already-downloaded video files to WAV locally — works for the
    *  Instagram mp4s whose CDN blocks server-side extraction. */
   async function localExtract() {
@@ -399,7 +427,11 @@ export function VideosGrid() {
             <ThemedText style={styles.selBarText}>{dlMsg}</ThemedText>
           </View>
         ) : (
-          <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selScroll} contentContainerStyle={styles.selScrollInner}>
+            <Pressable onPress={analyzeSelected} disabled={!sel.size} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.text, borderColor: theme.border }, brutalShadow(theme.shadow, 2), !sel.size && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="sparkles" size={13} color={theme.background} />
+              <ThemedText style={[styles.selBtnText, { color: theme.background }]}>analyze</ThemedText>
+            </Pressable>
             <Pressable onPress={() => batchDownload('videos')} disabled={!sel.size} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 2), !sel.size && { opacity: 0.5 }, pressed && styles.pressIn]}>
               <Ionicons name="videocam" size={13} color={theme.primaryText} />
               <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>videos</ThemedText>
@@ -412,11 +444,22 @@ export function VideosGrid() {
               <Ionicons name="git-merge" size={13} color="#fff" />
               <ThemedText style={[styles.selBtnText, { color: '#fff' }]}>one merged wav</ThemedText>
             </Pressable>
+            <Pressable onPress={downloadThumbs} disabled={!sel.size} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 2), !sel.size && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="image-outline" size={13} color={theme.text} />
+              <ThemedText style={[styles.selBtnText, { color: theme.text }]}>thumbnails</ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={() => setFrameVid(sorted.find((v) => sel.has(v.id)) ?? null)}
+              disabled={sel.size !== 1}
+              style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 2), sel.size !== 1 && { opacity: 0.5 }, pressed && styles.pressIn]}>
+              <Ionicons name="camera-outline" size={13} color={theme.text} />
+              <ThemedText style={[styles.selBtnText, { color: theme.text }]}>grab frame…</ThemedText>
+            </Pressable>
             <Pressable onPress={localExtract} style={({ pressed }) => [styles.selBtn, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
               <Ionicons name="folder-open-outline" size={13} color={theme.text} />
               <ThemedText style={[styles.selBtnText, { color: theme.text }]}>wav from files…</ThemedText>
             </Pressable>
-          </>
+          </ScrollView>
         )}
         <Pressable
           onPress={() => {
@@ -429,7 +472,96 @@ export function VideosGrid() {
         </Pressable>
       </View>
     )}
+
+    {frameVid && <FramePicker video={frameVid} onClose={() => setFrameVid(null)} />}
     </View>
+  );
+}
+
+/** Load the selected video into a real player; pause anywhere and save that
+ *  exact frame as a full-resolution PNG. */
+function FramePicker({ video, onClose }: { video: VtVideo; onClose: () => void }) {
+  const theme = useTheme();
+  const [src, setSrc] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const vidRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    let url: string | null = null;
+    let active = true;
+    (async () => {
+      try {
+        const r = await vtDownloadMedia(video, 'video');
+        if (!r.ok || !r.url) throw new Error(r.error ?? 'no media for this video');
+        const blob = await fetchMediaBlob(r.url);
+        if (!active) return;
+        url = URL.createObjectURL(blob);
+        setSrc(url);
+      } catch (e) {
+        if (active) setErr((e as Error).message);
+      }
+    })();
+    return () => {
+      active = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [video]);
+
+  async function grab() {
+    if (!vidRef.current) return;
+    try {
+      const t = Math.floor(vidRef.current.currentTime * 10) / 10;
+      saveBlob(await captureFrame(vidRef.current), `${safeName(video.accountUsername)}-frame-${t}s.png`);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.panelBackdrop} onPress={onClose}>
+        <Pressable style={[styles.framePanel, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]} onPress={() => {}}>
+          <View style={styles.panelHead}>
+            <ThemedText style={styles.panelTitle}>grab a frame · @{video.accountUsername}</ThemedText>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={20} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+          {err ? (
+            <ThemedText type="small" themeColor="danger">
+              {err}
+            </ThemedText>
+          ) : !src ? (
+            <View style={{ alignItems: 'center', paddingVertical: 48, gap: 10 }}>
+              <ActivityIndicator color={theme.primary} />
+              <ThemedText type="small" themeColor="textSecondary">
+                loading video…
+              </ThemedText>
+            </View>
+          ) : (
+            createElement('video', {
+              ref: vidRef,
+              src,
+              controls: true,
+              playsInline: true,
+              style: { width: '100%', maxHeight: 460, borderRadius: 10, background: '#000' },
+            })
+          )}
+          <Pressable
+            onPress={grab}
+            disabled={!src}
+            style={({ pressed }) => [styles.frameBtn, { backgroundColor: src ? theme.primary : theme.backgroundElement, borderColor: theme.border }, src ? brutalShadow(theme.shadow, 3) : null, pressed && styles.pressIn]}>
+            <Ionicons name="camera" size={16} color={src ? theme.primaryText : theme.textSecondary} />
+            <ThemedText style={{ color: src ? theme.primaryText : theme.textSecondary, fontWeight: '900', fontSize: 15 }}>
+              {'  '}download this frame (png)
+            </ThemedText>
+          </Pressable>
+          <ThemedText type="small" themeColor="textSecondary">
+            scrub / pause exactly where you want, then hit download — saved at full video resolution.
+          </ThemedText>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -712,13 +844,17 @@ const styles = StyleSheet.create({
   filterLabel: { width: 70, fontSize: 12, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   panelFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.one },
   doneBtn: { paddingHorizontal: Spacing.four, height: 38, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  floatBar: { position: 'absolute', bottom: 24, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, maxWidth: '94%', borderRadius: Radius.lg, borderWidth: Border.widthThick, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, zIndex: 40 },
+  floatBar: { position: 'absolute', bottom: 24, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: Spacing.two, maxWidth: '94%', borderRadius: Radius.lg, borderWidth: Border.widthThick, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, zIndex: 40 },
   selCount: { minWidth: 28, height: 28, borderRadius: 14, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   selCountText: { fontSize: 13, fontWeight: '900' },
   selBarText: { fontSize: 14, fontWeight: '800' },
   selBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 34, borderRadius: Radius.sm, borderWidth: Border.width },
   selBtnText: { fontSize: 13, fontWeight: '800' },
   selClose: { width: 30, height: 30, borderRadius: 15, borderWidth: Border.width, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  selScroll: { flexShrink: 1, flexGrow: 0, maxWidth: 760 },
+  selScrollInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 3, paddingHorizontal: 2 },
+  framePanel: { width: '100%', maxWidth: 560, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  frameBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: Radius.md, borderWidth: Border.width },
   pressIn: { transform: [{ translateX: 2 }, { translateY: 2 }] },
   selCheck: { position: 'absolute', top: 6, left: '50%', marginLeft: -12, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.three },
