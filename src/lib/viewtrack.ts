@@ -302,6 +302,19 @@ export async function reconcileLinks(): Promise<number> {
   return (d?.linked ?? 0) + (d?.submitted ?? 0);
 }
 
+/**
+ * Admin: manually attach ANY profile URL to a creator. The account gets
+ * tracked in ViewTrack (added if new), assigned to the creator's mirrored
+ * ViewTrack creator (created by name if missing), and linked here as
+ * 'processing' until the first sync lands.
+ */
+export async function addAccountByUrl(profileId: string, url: string): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'add-account', profileId, url } });
+  if (error) return { ok: false, error: await fnErrorMessage(error) };
+  const d = data as { ok?: boolean; error?: string } | null;
+  return d?.ok ? { ok: true } : { ok: false, error: d?.error ?? 'failed' };
+}
+
 /** Admin: hard-delete a creator — wipes their data and removes the login. */
 export async function deleteCreatorAccount(profileId: string): Promise<{ ok: boolean; error?: string }> {
   const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-creator', profileId } });

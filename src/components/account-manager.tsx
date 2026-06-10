@@ -11,7 +11,7 @@ import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { vtAccounts, type VtAccount, type VtProject } from '@/lib/viewtrack';
+import { addAccountByUrl, detectPlatform, vtAccounts, type VtAccount, type VtProject } from '@/lib/viewtrack';
 
 const sb = supabase as unknown as { from: (t: string) => any };
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
@@ -126,6 +126,9 @@ export function AccountManager({
 
       <BrutalButton label="+ Add account" variant="neutral" onPress={() => setPicker({ mode: 'add' })} />
 
+      {/* manual add — any profile URL, tracked in ViewTrack automatically */}
+      <ManualAddRow profileId={creator.id} onChanged={onChanged} />
+
       <AccountPicker
         visible={!!picker}
         mode={picker?.mode ?? 'add'}
@@ -135,6 +138,62 @@ export function AccountManager({
         onClose={() => setPicker(null)}
         onPick={pick}
       />
+    </View>
+  );
+}
+
+/** Paste any TikTok / Instagram / YouTube profile URL — ViewTrack tracks it
+ *  automatically, no need for the account to exist there first. */
+function ManualAddRow({ profileId, onChanged }: { profileId: string; onChanged: () => void }) {
+  const theme = useTheme();
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const platform = detectPlatform(url);
+
+  async function add() {
+    if (!url.trim() || busy) return;
+    setBusy(true);
+    setMsg(null);
+    const r = await addAccountByUrl(profileId, url.trim());
+    setBusy(false);
+    if (r.ok) {
+      setUrl('');
+      setMsg('✓ added — ViewTrack is syncing it now');
+      onChanged();
+    } else {
+      setMsg(r.error ?? 'failed');
+    }
+    setTimeout(() => setMsg(null), 6000);
+  }
+
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={[styles.manualRow, { borderColor: theme.border, backgroundColor: theme.card }]}>
+        <Ionicons name={(platform ? PLATFORM_ICON[platform] : 'link-outline') as never} size={16} color={platform ? PLATFORM_COLOR[platform] : theme.textSecondary} />
+        <TextInput
+          value={url}
+          onChangeText={setUrl}
+          placeholder="or paste any profile URL (tiktok.com/@…, instagram.com/…)"
+          placeholderTextColor={theme.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[styles.manualInput, { color: theme.text }]}
+          onSubmitEditing={add}
+        />
+        <Pressable onPress={add} disabled={!url.trim() || busy} style={[styles.manualBtn, { backgroundColor: url.trim() ? theme.primary : theme.backgroundElement }]}>
+          {busy ? (
+            <ActivityIndicator size="small" color={theme.primaryText} />
+          ) : (
+            <ThemedText style={{ color: url.trim() ? theme.primaryText : theme.textSecondary, fontWeight: '900', fontSize: 13 }}>add</ThemedText>
+          )}
+        </Pressable>
+      </View>
+      {!!msg && (
+        <ThemedText type="small" style={{ color: msg.startsWith('✓') ? theme.success : theme.danger }}>
+          {msg}
+        </ThemedText>
+      )}
     </View>
   );
 }
@@ -266,6 +325,9 @@ function AccountPicker({
 
 const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four, borderRadius: Radius.md, borderWidth: Border.width, borderStyle: 'dashed' },
+  manualRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingLeft: Spacing.two + 2, paddingRight: 5, height: 46, borderRadius: Radius.md, borderWidth: Border.width },
+  manualInput: { flex: 1, fontSize: 14, fontWeight: '600', height: '100%' },
+  manualBtn: { paddingHorizontal: Spacing.two + 4, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center', minWidth: 52 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
   pic: { width: 44, height: 44, borderRadius: 22 },
   handleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
