@@ -12,7 +12,7 @@ import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { vtAccounts, vtProjects, type VtAccount, type VtProject } from '@/lib/viewtrack';
+import { reconcileLinks, vtAccounts, vtProjects, type VtAccount, type VtProject } from '@/lib/viewtrack';
 
 export type Creator = { id: string; full_name: string | null; avatar_url: string | null; disabled: boolean };
 export type ExistingLink = {
@@ -50,6 +50,8 @@ export function useCreatorsData() {
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    // push any 'requested' handles into ViewTrack + flip finished syncs to linked
+    await reconcileLinks().catch(() => 0);
     const [{ data: profs }, projs, { data: linkRows }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, avatar_url, disabled').eq('role', 'creator').order('full_name'),
       vtProjects(),

@@ -282,10 +282,22 @@ export async function pendingLinks(): Promise<AccountLink[]> {
   return (data as AccountLink[]) ?? [];
 }
 
-/** Flip 'processing' links to 'linked' once ViewTrack finishes the first sync. */
+/**
+ * Heal account links: submits 'requested' handles to ViewTrack (admin) and
+ * flips 'processing' links to 'linked' once their first sync finishes.
+ */
 export async function reconcileLinks(): Promise<number> {
   const { data } = await supabase.functions.invoke('viewtrack', { body: { action: 'reconcile' } });
-  return (data as { linked?: number } | null)?.linked ?? 0;
+  const d = data as { linked?: number; submitted?: number } | null;
+  return (d?.linked ?? 0) + (d?.submitted ?? 0);
+}
+
+/** Admin: hard-delete a creator — wipes their data and removes the login. */
+export async function deleteCreatorAccount(profileId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-creator', profileId } });
+  if (error) return { ok: false, error: error.message };
+  const d = data as { ok?: boolean; error?: string } | null;
+  return d?.ok ? { ok: true } : { ok: false, error: d?.error ?? 'failed' };
 }
 
 export async function deleteLink(id: string) {

@@ -22,7 +22,7 @@ import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { supabase } from '@/lib/supabase';
-import { detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtDownloadMedia, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
+import { deleteCreatorAccount, detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtDownloadMedia, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -133,6 +133,25 @@ export function CreatorDatabase() {
     reload();
   }
 
+  const [deleting, setDeleting] = useState(false);
+  async function bulkDelete() {
+    const ids = [...picked];
+    if (!ids.length || deleting) return;
+    if (
+      Platform.OS === 'web' &&
+      !window.confirm(`PERMANENTLY delete ${ids.length} creator${ids.length === 1 ? '' : 's'}? This wipes their accounts, stats, payouts, messages and login. This cannot be undone.`)
+    )
+      return;
+    setDeleting(true);
+    for (const id of ids) {
+      const r = await deleteCreatorAccount(id);
+      if (!r.ok && Platform.OS === 'web') window.alert(`Could not delete: ${r.error}`);
+    }
+    setDeleting(false);
+    setPicked(new Set());
+    reload();
+  }
+
   useEffect(() => {
     let active = true;
     setActLoading(true);
@@ -230,6 +249,9 @@ export function CreatorDatabase() {
           </Pressable>
           <Pressable onPress={() => bulkAccess(false)} style={[styles.selBarBtn, { backgroundColor: theme.success }]}>
             <ThemedText style={styles.selBarBtnText}>Restore</ThemedText>
+          </Pressable>
+          <Pressable onPress={bulkDelete} disabled={deleting} style={[styles.selBarBtn, { backgroundColor: '#7F1D1D' }, deleting && { opacity: 0.6 }]}>
+            <ThemedText style={styles.selBarBtnText}>{deleting ? 'Deleting…' : 'Delete forever'}</ThemedText>
           </Pressable>
           <Pressable onPress={() => setPicked(new Set())} style={[styles.selBarBtn, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText style={[styles.selBarBtnText, { color: theme.text }]}>Clear</ThemedText>
