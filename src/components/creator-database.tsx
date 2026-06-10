@@ -1399,14 +1399,21 @@ function CrossPostCard({ video, siblings }: { video: VtVideo; siblings?: VtVideo
         <ThemedText style={[styles.aiBlkLabel, { color: theme.text }]}>{compact(total)} total</ThemedText>
       </View>
       {siblings.map((s) => (
-        <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Pressable
+          key={s.id}
+          onPress={() => s.url && openUrl(s.url)}
+          style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 }, pressed && { opacity: 0.6 }]}>
           <Ionicons name={PLATFORM_ICON[s.platform] as never} size={14} color={PLATFORM_COLOR[s.platform] ?? theme.text} />
           <ThemedText style={[styles.aiBlkText, { flex: 1 }]} numberOfLines={1}>
             @{s.accountUsername}
             {s.id === video.id ? '  (this one)' : ''}
           </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {s.uploadDate ? new Date(s.uploadDate).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}
+          </ThemedText>
           <ThemedText style={[styles.aiBlkText, { fontWeight: '800' }]}>{compact(s.views ?? 0)}</ThemedText>
-        </View>
+          <Ionicons name="open-outline" size={13} color={theme.textSecondary} />
+        </Pressable>
       ))}
     </View>
   );

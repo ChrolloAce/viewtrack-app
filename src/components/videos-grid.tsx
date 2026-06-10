@@ -72,6 +72,7 @@ export function VideosGrid() {
   const [editChecklist, setEditChecklist] = useState(false);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
   const [matching, setMatching] = useState(false);
+  const [groupCross, setGroupCross] = useState(true);
   const [selectMode, setSelectMode] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [dlMsg, setDlMsg] = useState<string | null>(null);
@@ -147,6 +148,26 @@ export function VideosGrid() {
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
   }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo, platformFilter, creatorFilter, creators]);
+
+  // grouped view: one tile per cross-post (the top-performing copy represents
+  // the group; its tile shows combined views + every platform's icon)
+  const display = useMemo(() => {
+    if (!groupCross) return sorted;
+    const seen = new Set<string>();
+    const out: VtVideo[] = [];
+    for (const v of sorted) {
+      const g = crossMap[v.id];
+      if (!g) {
+        out.push(v);
+        continue;
+      }
+      const key = g[0].id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(v);
+    }
+    return out;
+  }, [sorted, crossMap, groupCross]);
 
   // stat boxes reflect the FILTERED set — pick a hook and these become that hook's numbers
   const stats = useMemo(() => {
@@ -284,6 +305,8 @@ export function VideosGrid() {
           flagFilter={flagFilter}
           setFlagFilter={setFlagFilter}
           hasChecklist={reqs.length > 0}
+          groupCross={groupCross}
+          setGroupCross={setGroupCross}
           platformFilter={platformFilter}
           setPlatformFilter={setPlatformFilter}
           creatorFilter={creatorFilter}
@@ -384,12 +407,13 @@ export function VideosGrid() {
         </ThemedText>
       ) : (
         <View style={styles.grid}>
-          {sorted.map((v) => (
+          {display.map((v) => (
             <VideoCard
               key={v.id}
               video={v}
               state={analyses[v.id]}
               flagged={flaggedById[v.id] === true}
+              siblings={groupCross ? crossMap[v.id] : undefined}
               crossCount={crossMap[v.id]?.length}
               selected={selectMode ? sel.has(v.id) : undefined}
               onPress={() => (selectMode ? toggleSel(v.id) : setOpen(v))}
@@ -412,6 +436,8 @@ function ScriptFilterButton({
   flagFilter,
   setFlagFilter,
   hasChecklist,
+  groupCross,
+  setGroupCross,
   platformFilter,
   setPlatformFilter,
   creatorFilter,
@@ -424,6 +450,8 @@ function ScriptFilterButton({
   flagFilter: FlagFilter;
   setFlagFilter: (v: FlagFilter) => void;
   hasChecklist: boolean;
+  groupCross: boolean;
+  setGroupCross: (v: boolean) => void;
   platformFilter: PlatformFilter;
   setPlatformFilter: (v: PlatformFilter) => void;
   creatorFilter: string;
@@ -486,6 +514,18 @@ function ScriptFilterButton({
                 <Pressable onPress={() => setOpen(false)} hitSlop={8}>
                   <Ionicons name="close" size={20} color={theme.textSecondary} />
                 </Pressable>
+              </View>
+              <View style={styles.filterRow}>
+                <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>cross-post</ThemedText>
+                <Dropdown
+                  value={groupCross ? 'grouped' : 'separate'}
+                  options={[
+                    { value: 'grouped', label: 'One tile per video (combined views)', icon: 'swap-horizontal' },
+                    { value: 'separate', label: 'Separate tile per platform', icon: 'copy-outline' },
+                  ]}
+                  onChange={(v) => setGroupCross(v === 'grouped')}
+                  minWidth={240}
+                />
               </View>
               <View style={styles.filterRow}>
                 <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>platform</ThemedText>
@@ -554,8 +594,11 @@ function StatBox({ label, value, icon, danger }: { label: string; value: string;
   );
 }
 
-function VideoCard({ video: v, state, flagged, crossCount, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; crossCount?: number; selected?: boolean; onPress: () => void }) {
+function VideoCard({ video: v, state, flagged, siblings, crossCount, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; siblings?: VtVideo[]; crossCount?: number; selected?: boolean; onPress: () => void }) {
   const theme = useTheme();
+  // grouped cross-post tile: combined views + an icon per platform
+  const combinedViews = siblings?.length ? siblings.reduce((s, x) => s + (x.views ?? 0), 0) : v.views;
+  const platforms = siblings?.length ? [...new Set(siblings.map((x) => x.platform))] : [v.platform];
   return (
     <Pressable
       onPress={onPress}
@@ -579,8 +622,10 @@ function VideoCard({ video: v, state, flagged, crossCount, selected, onPress }: 
             <Ionicons name="film-outline" size={26} color={theme.textSecondary} />
           </View>
         )}
-        <View style={[styles.platBadge, { backgroundColor: '#fff', borderColor: theme.border }]}>
-          <Ionicons name={PLATFORM_ICON[v.platform] as never} size={13} color={PLATFORM_COLOR[v.platform] ?? theme.text} />
+        <View style={[styles.platBadge, { backgroundColor: '#fff', borderColor: theme.border, width: platforms.length > 1 ? 24 + (platforms.length - 1) * 17 : 24 }]}>
+          {platforms.map((p) => (
+            <Ionicons key={p} name={PLATFORM_ICON[p] as never} size={13} color={PLATFORM_COLOR[p] ?? theme.text} />
+          ))}
         </View>
         <AnalyzedBadge state={state} />
         {!!crossCount && crossCount > 1 && (
@@ -597,7 +642,7 @@ function VideoCard({ video: v, state, flagged, crossCount, selected, onPress }: 
         )}
         <View style={styles.viewsOverlay}>
           <Ionicons name="eye" size={12} color="#fff" />
-          <ThemedText style={styles.viewsText}>{compact(v.views)}</ThemedText>
+          <ThemedText style={styles.viewsText}>{compact(combinedViews ?? 0)}</ThemedText>
         </View>
       </View>
       <ThemedText style={styles.acct} numberOfLines={1}>
@@ -641,7 +686,7 @@ const styles = StyleSheet.create({
   tile: { width: 150, borderRadius: Radius.md, borderWidth: Border.width, overflow: 'hidden' },
   thumbWrap: { width: '100%', height: 200 },
   thumb: { width: '100%', height: '100%' },
-  platBadge: { position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  platBadge: { position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
   aiBadge: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   viewsOverlay: { position: 'absolute', bottom: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.full },
   flagBadge: { position: 'absolute', bottom: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5 },
