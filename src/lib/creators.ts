@@ -19,8 +19,8 @@ export type PendingCreator = {
  * so accounts, videos and activity work before they claim, and returns the
  * invite code to share. Claiming merges the shadow into their account.
  */
-export async function addPendingCreator(name: string): Promise<{ code?: string; error?: string }> {
-  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'add-creator', name } });
+export async function addPendingCreator(name: string, vtCreatorId?: string): Promise<{ code?: string; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'add-creator', name, vtCreatorId } });
   if (error) return { error: error.message };
   const d = data as { ok?: boolean; code?: string; error?: string } | null;
   return d?.ok ? { code: d.code } : { error: d?.error ?? 'failed' };

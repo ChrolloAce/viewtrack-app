@@ -509,10 +509,11 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
     setSearch('');
     onClose();
   }
-  async function add(creatorName: string) {
+  async function add(creatorName: string, vtCreatorId?: string) {
     if (!creatorName.trim() || busy) return;
     setBusy(true);
-    const r = await addPendingCreator(creatorName.trim());
+    // ViewTrack already knows this creator's accounts — they auto-link server-side
+    const r = await addPendingCreator(creatorName.trim(), vtCreatorId);
     setBusy(false);
     if (r.code) {
       setName(creatorName.trim());
@@ -596,7 +597,7 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
                     filtered.map((c) => (
                       <Pressable
                         key={c.id}
-                        onPress={() => add(c.name)}
+                        onPress={() => add(c.name, c.id)}
                         disabled={busy}
                         style={({ pressed }) => [styles.vtRow, { borderColor: theme.border }, pressed && { backgroundColor: theme.backgroundElement }]}>
                         <BrutalAvatar name={c.name} uri={c.avatarUrl} size={34} />
