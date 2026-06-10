@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AnalyzeModal } from '@/components/creator-database';
 import { Dropdown, type DropdownOption } from '@/components/dropdown';
@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
+import { decodeAudio, encodeWav, fetchMediaBlob, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { linkedCreatorFilters, vtAnalyzeVideo, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
@@ -69,6 +70,9 @@ export function VideosGrid() {
   const [editChecklist, setEditChecklist] = useState(false);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
   const [matching, setMatching] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [dlMsg, setDlMsg] = useState<string | null>(null);
   const { map: analyses } = useVideoAnalyses();
   const { reqs } = useFlagRequirements();
   const { clusters, byVideo, reload: reloadSections } = useSections();
@@ -170,6 +174,42 @@ export function VideosGrid() {
     setMatching(false);
   }
 
+  const toggleSel = (id: string) =>
+    setSel((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  /** Batch download the selected videos as mp4s, per-video WAVs, or one merged WAV (for voice cloning). */
+  async function batchDownload(kind: 'videos' | 'audios' | 'merged') {
+    const vids = sorted.filter((v) => sel.has(v.id));
+    if (!vids.length || dlMsg) return;
+    try {
+      const merged: AudioBuffer[] = [];
+      for (const [i, v] of vids.entries()) {
+        setDlMsg(`${kind === 'videos' ? 'downloading' : 'extracting audio'} ${i + 1}/${vids.length}…`);
+        const r = await vtDownloadMedia(v, 'video');
+        if (!r.ok || !r.url) throw new Error(r.error ?? `no media for @${v.accountUsername}`);
+        const blob = await fetchMediaBlob(r.url);
+        const base = `${safeName(v.accountUsername)}-${v.id.slice(-8)}`;
+        if (kind === 'videos') saveBlob(blob, `${base}.mp4`);
+        else {
+          const buf = await decodeAudio(blob);
+          if (kind === 'audios') saveBlob(encodeWav([buf]), `${base}.wav`);
+          else merged.push(buf);
+        }
+      }
+      if (kind === 'merged') {
+        setDlMsg('merging…');
+        saveBlob(encodeWav(merged), `combined-${vids.length}-audios.wav`);
+      }
+    } catch (e) {
+      if (Platform.OS === 'web') window.alert(`Download failed: ${(e as Error).message}`);
+    }
+    setDlMsg(null);
+  }
+
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
 
   return (
@@ -197,6 +237,15 @@ export function VideosGrid() {
           sectionOptions={sectionOptions}
         />
         <View style={styles.actions}>
+          <Pressable
+            onPress={() => {
+              setSelectMode((m) => !m);
+              setSel(new Set());
+            }}
+            style={[styles.checklistBtn, { borderColor: theme.border }, selectMode && { backgroundColor: theme.text }]}>
+            <Ionicons name="checkbox-outline" size={15} color={selectMode ? theme.background : theme.text} />
+            <ThemedText style={[styles.checklistBtnText, selectMode && { color: theme.background }]}>select</ThemedText>
+          </Pressable>
           <Pressable onPress={() => setEditChecklist(true)} style={[styles.checklistBtn, { borderColor: theme.border }]}>
             <Ionicons name="flag-outline" size={15} color={theme.text} />
             <ThemedText style={styles.checklistBtnText}>checklist</ThemedText>
@@ -213,6 +262,43 @@ export function VideosGrid() {
           </Pressable>
         </View>
       </View>
+
+      {/* selection action bar — download selected as mp4s / WAVs / one merged WAV */}
+      {selectMode && (
+        <View style={[styles.selBar, { backgroundColor: theme.text }]}>
+          <ThemedText style={[styles.selBarText, { color: theme.background }]}>{sel.size} selected</ThemedText>
+          {dlMsg ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color={theme.background} />
+              <ThemedText style={[styles.selBarText, { color: theme.background }]}>{dlMsg}</ThemedText>
+            </View>
+          ) : (
+            <>
+              <Pressable onPress={() => batchDownload('videos')} disabled={!sel.size} style={[styles.selBtn, { backgroundColor: theme.primary }, !sel.size && { opacity: 0.5 }]}>
+                <Ionicons name="videocam" size={13} color={theme.primaryText} />
+                <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>videos</ThemedText>
+              </Pressable>
+              <Pressable onPress={() => batchDownload('audios')} disabled={!sel.size} style={[styles.selBtn, { backgroundColor: theme.primary }, !sel.size && { opacity: 0.5 }]}>
+                <Ionicons name="musical-notes" size={13} color={theme.primaryText} />
+                <ThemedText style={[styles.selBtnText, { color: theme.primaryText }]}>audios (wav)</ThemedText>
+              </Pressable>
+              <Pressable onPress={() => batchDownload('merged')} disabled={sel.size < 2} style={[styles.selBtn, { backgroundColor: theme.success }, sel.size < 2 && { opacity: 0.5 }]}>
+                <Ionicons name="git-merge" size={13} color="#fff" />
+                <ThemedText style={[styles.selBtnText, { color: '#fff' }]}>one merged wav</ThemedText>
+              </Pressable>
+            </>
+          )}
+          <Pressable
+            onPress={() => {
+              setSelectMode(false);
+              setSel(new Set());
+            }}
+            style={{ marginLeft: 'auto' }}
+            hitSlop={8}>
+            <Ionicons name="close" size={18} color={theme.background} />
+          </Pressable>
+        </View>
+      )}
 
       {/* stat boxes — reflect whatever filters are active */}
       {!loading && (
@@ -238,7 +324,14 @@ export function VideosGrid() {
       ) : (
         <View style={styles.grid}>
           {sorted.map((v) => (
-            <VideoCard key={v.id} video={v} state={analyses[v.id]} flagged={flaggedById[v.id] === true} onPress={() => setOpen(v)} />
+            <VideoCard
+              key={v.id}
+              video={v}
+              state={analyses[v.id]}
+              flagged={flaggedById[v.id] === true}
+              selected={selectMode ? sel.has(v.id) : undefined}
+              onPress={() => (selectMode ? toggleSel(v.id) : setOpen(v))}
+            />
           ))}
         </View>
       )}
@@ -399,11 +492,24 @@ function StatBox({ label, value, icon, danger }: { label: string; value: string;
   );
 }
 
-function VideoCard({ video: v, state, flagged, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; onPress: () => void }) {
+function VideoCard({ video: v, state, flagged, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; selected?: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.tile, { borderColor: flagged ? theme.danger : theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 3), pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tile,
+        { borderColor: selected ? theme.primary : flagged ? theme.danger : theme.border, backgroundColor: theme.card },
+        selected && { borderWidth: Border.widthThick },
+        brutalShadow(theme.shadow, 3),
+        pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] },
+      ]}>
       <View style={styles.thumbWrap}>
+        {selected !== undefined && (
+          <View style={[styles.selCheck, { backgroundColor: selected ? theme.primary : 'rgba(0,0,0,0.45)', borderColor: '#fff' }]}>
+            {selected && <Ionicons name="checkmark" size={13} color="#fff" />}
+          </View>
+        )}
         {v.thumbnail ? (
           <Image source={{ uri: v.thumbnail }} style={styles.thumb} contentFit="cover" />
         ) : (
@@ -486,6 +592,11 @@ const styles = StyleSheet.create({
   filterLabel: { width: 70, fontSize: 12, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
   panelFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.one },
   doneBtn: { paddingHorizontal: Spacing.four, height: 38, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  selBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, borderRadius: Radius.md, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, marginBottom: Spacing.three },
+  selBarText: { fontSize: 14, fontWeight: '800' },
+  selBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.two + 2, height: 32, borderRadius: Radius.full },
+  selBtnText: { fontSize: 13, fontWeight: '800' },
+  selCheck: { position: 'absolute', top: 6, left: '50%', marginLeft: -12, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.three },
   statBox: { minWidth: 130, flexGrow: 1, maxWidth: 200, gap: 2, paddingVertical: Spacing.two + 2, paddingHorizontal: Spacing.two + 4, borderRadius: Radius.md, borderWidth: Border.width },
   statTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },

@@ -20,6 +20,7 @@ import { recordPayout, usePayouts } from '@/lib/payouts';
 import { badgeFor } from '@/lib/badges';
 import { useJobs } from '@/lib/jobs';
 import { listRecordings, type Recording } from '@/lib/recordings';
+import { safeName, saveBlob, videoToWav } from '@/lib/media-tools';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { supabase } from '@/lib/supabase';
 import { deleteCreatorAccount, detectPlatform, getVideoAnalysis, overlayItems, segTime, textOf, transcriptSegs, vtAccounts, vtAnalyzeVideo, vtCreator, vtCreatorActivity, vtDownloadMedia, vtListCreators, vtRefreshCreator, vtRefreshProject, type CreatorActivity, type CreatorView, type VideoAnalysis, type VtCreator, type VtProject, type VtVideo } from '@/lib/viewtrack';
@@ -1387,10 +1388,17 @@ function DownloadButton({ video }: { video: VtVideo }) {
     setMenu(false);
     setBusy(mode);
     setErr(null);
-    const r = await vtDownloadMedia(video, mode);
+    try {
+      // both modes need the video file; audio extracts the actual voice track
+      // in-browser (NOT the TikTok "sound", which can be a music overlay)
+      const r = await vtDownloadMedia(video, 'video');
+      if (!r.ok || !r.url) throw new Error(r.error ?? 'download failed');
+      if (mode === 'video') openUrl(r.url);
+      else saveBlob(await videoToWav(r.url), `${safeName(video.accountUsername)}-${video.id.slice(-8)}.wav`);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
     setBusy(null);
-    if (r.ok && r.url) openUrl(r.url);
-    else setErr(r.error ?? 'download failed');
   }
 
   return (
@@ -1409,7 +1417,7 @@ function DownloadButton({ video }: { video: VtVideo }) {
           </Pressable>
           <Pressable onPress={() => grab('audio')} style={({ pressed }) => [styles.dlItem, pressed && { backgroundColor: theme.backgroundElement }]}>
             <Ionicons name="musical-notes-outline" size={16} color={theme.text} />
-            <ThemedText style={styles.dlItemText}>Audio only (mp3)</ThemedText>
+            <ThemedText style={styles.dlItemText}>Audio only (wav)</ThemedText>
           </Pressable>
         </View>
       )}
