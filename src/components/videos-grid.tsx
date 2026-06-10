@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { acctKey, detectCrossPosts } from '@/lib/crossposts';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
 import { decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
@@ -108,6 +109,15 @@ export function VideosGrid() {
   useEffect(() => {
     linkedCreatorFilters().then(setCreators);
   }, []);
+
+  // cross-posts: same video posted to several platforms — matched per creator
+  // by posting order (k-th tiktok ↔ k-th instagram within 72h)
+  const crossMap = useMemo(() => {
+    const owner: Record<string, string> = {};
+    for (const c of creators) for (const k of c.keys) owner[k] = c.id;
+    // unknown accounts fall back to grouping by handle (same name across platforms)
+    return detectCrossPosts(videos, (v) => owner[acctKey(v)] ?? `acct:${(v.accountUsername ?? '').toLowerCase()}`);
+  }, [videos, creators]);
 
   const sorted = useMemo(() => {
     let arr = [...videos];
@@ -370,6 +380,7 @@ export function VideosGrid() {
               video={v}
               state={analyses[v.id]}
               flagged={flaggedById[v.id] === true}
+              crossCount={crossMap[v.id]?.length}
               selected={selectMode ? sel.has(v.id) : undefined}
               onPress={() => (selectMode ? toggleSel(v.id) : setOpen(v))}
             />
@@ -377,7 +388,7 @@ export function VideosGrid() {
         </View>
       )}
 
-      {open && <AnalyzeModal video={open} onClose={() => setOpen(null)} />}
+      {open && <AnalyzeModal video={open} siblings={crossMap[open.id]} onClose={() => setOpen(null)} />}
       {editChecklist && <ChecklistEditor onClose={() => setEditChecklist(false)} />}
     </ScrollView>
   );
@@ -533,7 +544,7 @@ function StatBox({ label, value, icon, danger }: { label: string; value: string;
   );
 }
 
-function VideoCard({ video: v, state, flagged, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; selected?: boolean; onPress: () => void }) {
+function VideoCard({ video: v, state, flagged, crossCount, selected, onPress }: { video: VtVideo; state?: AnalysisState; flagged?: boolean; crossCount?: number; selected?: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
@@ -562,6 +573,12 @@ function VideoCard({ video: v, state, flagged, selected, onPress }: { video: VtV
           <Ionicons name={PLATFORM_ICON[v.platform] as never} size={13} color={PLATFORM_COLOR[v.platform] ?? theme.text} />
         </View>
         <AnalyzedBadge state={state} />
+        {!!crossCount && crossCount > 1 && (
+          <View style={[styles.crossBadge, { borderColor: theme.card }]}>
+            <Ionicons name="swap-horizontal" size={11} color="#fff" />
+            <ThemedText style={styles.crossText}>{crossCount}</ThemedText>
+          </View>
+        )}
         {flagged && (
           <View style={[styles.flagBadge, { backgroundColor: theme.danger, borderColor: theme.card }]}>
             <Ionicons name="flag" size={11} color="#fff" />
@@ -618,6 +635,8 @@ const styles = StyleSheet.create({
   aiBadge: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   viewsOverlay: { position: 'absolute', bottom: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.full },
   flagBadge: { position: 'absolute', bottom: 6, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1.5 },
+  crossBadge: { position: 'absolute', top: 34, right: 6, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1.5, backgroundColor: '#A855F7' },
+  crossText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   flagText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   checklistBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
   checklistBtnText: { fontSize: 14, fontWeight: '800' },

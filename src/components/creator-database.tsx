@@ -16,6 +16,7 @@ import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { addPendingCreator, deletePendingCreator, usePendingCreators, type PendingCreator } from '@/lib/creators';
+import { detectCrossPosts } from '@/lib/crossposts';
 import { recordPayout, usePayouts } from '@/lib/payouts';
 import { badgeFor } from '@/lib/badges';
 import { useJobs } from '@/lib/jobs';
@@ -958,6 +959,8 @@ function CreatorDetail({
   const totalVideos = accounts.reduce((s, a) => s + (a.totalVideos ?? 0), 0);
   const videosArr = view?.videos ?? [];
   const topVideos = [...videosArr].sort((a, b) => b.views - a.views).slice(0, 200);
+  // cross-posted pairs within this creator's videos (k-th post per platform)
+  const crossMap = useMemo(() => detectCrossPosts(videosArr, () => 'me'), [videosArr]);
   // payout: $15/video + $100 per 100k views per video
   const perVideoPay = (v: VtVideo) => 15 + Math.floor((v.views ?? 0) / 100_000) * 100;
   const payout = videosArr.reduce((s, v) => s + perVideoPay(v), 0);
@@ -1091,7 +1094,7 @@ function CreatorDetail({
             No videos yet.
           </ThemedText>
         ) : (
-          topVideos.map((v) => <VideoTile key={v.id} video={v} state={analyses[v.id]} onPress={() => setAnalyzeVid(v)} />)
+          topVideos.map((v) => <VideoTile key={v.id} video={v} state={analyses[v.id]} crossCount={crossMap[v.id]?.length} onPress={() => setAnalyzeVid(v)} />)
         )}
       </ScrollView>
 
@@ -1149,12 +1152,12 @@ function CreatorDetail({
         </Pressable>
       </Modal>
 
-      {analyzeVid && <AnalyzeModal video={analyzeVid} onClose={() => setAnalyzeVid(null)} />}
+      {analyzeVid && <AnalyzeModal video={analyzeVid} siblings={crossMap[analyzeVid.id]} onClose={() => setAnalyzeVid(null)} />}
     </ScrollView>
   );
 }
 
-function VideoTile({ video, state, onPress }: { video: VtVideo; state?: AnalysisState; onPress: () => void }) {
+function VideoTile({ video, state, crossCount, onPress }: { video: VtVideo; state?: AnalysisState; crossCount?: number; onPress: () => void }) {
   const theme = useTheme();
   // badge only when there's analysis activity: amber = running, green = done, red = error
   const badge =
@@ -1179,6 +1182,12 @@ function VideoTile({ video, state, onPress }: { video: VtVideo; state?: Analysis
           <Ionicons name={badge.icon} size={12} color={badge.color} />
         </View>
       )}
+      {!!crossCount && crossCount > 1 && (
+        <View style={[styles.crossBadgeTile, { borderColor: theme.card }]}>
+          <Ionicons name="swap-horizontal" size={10} color="#fff" />
+          <ThemedText style={styles.crossTileText}>{crossCount}</ThemedText>
+        </View>
+      )}
       <View style={styles.vMeta}>
         <Ionicons name="eye" size={13} color={theme.textSecondary} />
         <ThemedText type="small" themeColor="textSecondary">
@@ -1190,7 +1199,7 @@ function VideoTile({ video, state, onPress }: { video: VtVideo; state?: Analysis
 }
 
 /** Inline AI analysis for a creator's video — stays in the shell (sidebar present). */
-export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () => void }) {
+export function AnalyzeModal({ video, siblings, onClose }: { video: VtVideo; siblings?: VtVideo[]; onClose: () => void }) {
   const theme = useTheme();
   const { isAdmin } = useAuth();
   const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null);
@@ -1294,6 +1303,7 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
           </View>
 
           <ScrollView style={{ maxHeight: sideBySide ? 540 : 420 }} contentContainerStyle={{ gap: Spacing.two, paddingVertical: Spacing.two }}>
+            <CrossPostCard video={video} siblings={siblings} />
             {loading ? (
               <Skeleton height={80} radius={Radius.md} />
             ) : analyzing ? (
@@ -1377,6 +1387,31 @@ export function AnalyzeModal({ video, onClose }: { video: VtVideo; onClose: () =
   );
 }
 
+/** Cross-posted siblings of this video (same post on other platforms) with combined views. */
+function CrossPostCard({ video, siblings }: { video: VtVideo; siblings?: VtVideo[] }) {
+  const theme = useTheme();
+  if (!siblings || siblings.length < 2) return null;
+  const total = siblings.reduce((s, v) => s + (v.views ?? 0), 0);
+  return (
+    <View style={[styles.aiBlk, { borderColor: '#A855F7', backgroundColor: theme.background }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <ThemedText style={[styles.aiBlkLabel, { color: '#A855F7' }]}>CROSS-POSTED · {siblings.length} PLATFORMS</ThemedText>
+        <ThemedText style={[styles.aiBlkLabel, { color: theme.text }]}>{compact(total)} total</ThemedText>
+      </View>
+      {siblings.map((s) => (
+        <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name={PLATFORM_ICON[s.platform] as never} size={14} color={PLATFORM_COLOR[s.platform] ?? theme.text} />
+          <ThemedText style={[styles.aiBlkText, { flex: 1 }]} numberOfLines={1}>
+            @{s.accountUsername}
+            {s.id === video.id ? '  (this one)' : ''}
+          </ThemedText>
+          <ThemedText style={[styles.aiBlkText, { fontWeight: '800' }]}>{compact(s.views ?? 0)}</ThemedText>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Download the video file or just its audio — small menu over the button. */
 function DownloadButton({ video }: { video: VtVideo }) {
   const theme = useTheme();
@@ -1447,6 +1482,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   dbScroll: { padding: Spacing.four, gap: Spacing.three, width: '100%' },
   analyzeBadge: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  crossBadgeTile: { position: 'absolute', top: 4, left: 4, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1.5, backgroundColor: '#A855F7' },
+  crossTileText: { color: '#fff', fontSize: 9, fontWeight: '900' },
   analyzeModal: { width: '100%', maxWidth: 460, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
   analyzeModalWide: { maxWidth: 1000, flexDirection: 'row', gap: Spacing.four, alignItems: 'stretch' },
   playerPane: { width: 360, height: 640, borderRadius: Radius.md, borderWidth: Border.width, overflow: 'hidden', alignSelf: 'center' },
