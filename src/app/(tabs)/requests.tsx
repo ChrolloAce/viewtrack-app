@@ -10,7 +10,10 @@ import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/th
 import { useIsDesktop } from '@/hooks/use-is-desktop';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import { decideLink, pendingLinks, reconcileLinks, type AccountLink } from '@/lib/viewtrack';
+
+let requestsSeq = 0;
 
 export default function RequestsTab() {
   const isDesktop = useIsDesktop();
@@ -35,6 +38,20 @@ export function RequestsAdmin({ bottomInset = 0 }: { bottomInset?: number }) {
 
   useEffect(() => {
     load();
+    // live: new requests + processing→linked flips appear without a refresh
+    let t: ReturnType<typeof setTimeout> | null = null;
+    requestsSeq += 1;
+    const ch = supabase
+      .channel(`requests:${requestsSeq}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'account_links' }, () => {
+        if (t) clearTimeout(t);
+        t = setTimeout(load, 400);
+      })
+      .subscribe();
+    return () => {
+      if (t) clearTimeout(t);
+      supabase.removeChannel(ch);
+    };
   }, [load]);
 
   async function decide(id: string, approve: boolean) {

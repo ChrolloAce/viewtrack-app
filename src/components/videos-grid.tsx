@@ -14,6 +14,7 @@ import { acctKey, detectCrossPosts } from '@/lib/crossposts';
 import { evaluateFlags, isFlagged, useFlagRequirements } from '@/lib/flags';
 import { decodeAudio, encodeWav, fetchMediaBlob, pickLocalMedia, safeName, saveBlob } from '@/lib/media-tools';
 import { runSectionMatch, useSections, type SectionKind } from '@/lib/sections';
+import { supabase } from '@/lib/supabase';
 import { useVideoAnalyses, type AnalysisState } from '@/lib/use-analyses';
 import { linkedCreatorFilters, vtAnalyzeVideo, vtDownloadMedia, vtListVideos, type CreatorFilterEntry, type VtVideo } from '@/lib/viewtrack';
 
@@ -108,6 +109,15 @@ export function VideosGrid() {
 
   useEffect(() => {
     linkedCreatorFilters().then(setCreators);
+    // live: creator/account changes update the creator filter + cross-post owners
+    const ch = supabase
+      .channel(`videos-creators:${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'account_links' }, () => linkedCreatorFilters().then(setCreators))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => linkedCreatorFilters().then(setCreators))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   // cross-posts: same video posted to several platforms — matched per creator

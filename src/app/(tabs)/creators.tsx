@@ -29,6 +29,9 @@ export type RequestedLink = { id: string; username?: string | null; platform?: s
 const sb = supabase as unknown as { from: (t: string) => any };
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 
+// unique channel suffix — the hook mounts in both the mobile tab and desktop shell
+let creatorsDataSeq = 0;
+
 function compact(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -83,6 +86,23 @@ export function useCreatorsData() {
 
   useEffect(() => {
     reload();
+    // live: any creator/account/invite change anywhere refreshes this view
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(reload, 400);
+    };
+    creatorsDataSeq += 1;
+    const ch = supabase
+      .channel(`creators-data:${creatorsDataSeq}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'account_links' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_creators' }, bump)
+      .subscribe();
+    return () => {
+      if (t) clearTimeout(t);
+      supabase.removeChannel(ch);
+    };
   }, [reload]);
 
   return { creators, projects, linksByCreator, requestedByCreator, loading, reload };
