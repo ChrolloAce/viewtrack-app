@@ -201,20 +201,30 @@ export async function getVideoAnalysis(videoId: string): Promise<{ analysis: Vid
     : null;
 }
 
+/** Pull the real error message out of a FunctionsHttpError (the response body). */
+export async function fnErrorMessage(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response }).context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const j = (await ctx.json()) as { error?: string };
+      if (j?.error) return j.error;
+    } catch {
+      /* fall through */
+    }
+  }
+  return (error as Error)?.message ?? 'failed';
+}
+
 /**
- * Admin: resolve a direct media URL for downloading a video (or just its audio).
- * TikTok goes through the vt-download extractor; Instagram falls back to the
- * downloadUrl ViewTrack already provides (video only — no audio extraction).
+ * Admin: resolve a fresh direct media URL for downloading a video.
+ * TikTok resolves via extractor; Instagram gets a FRESH ViewTrack downloadUrl
+ * server-side (the ones cached in the grid expire).
  */
 export async function vtDownloadMedia(video: VtVideo, mode: 'video' | 'audio'): Promise<{ ok: boolean; url?: string; error?: string }> {
-  if (video.platform === 'tiktok') {
-    const { data, error } = await supabase.functions.invoke('vt-download', { body: { url: video.url, mode } });
-    if (error) return { ok: false, error: error.message };
-    const d = data as { ok?: boolean; url?: string; error?: string } | null;
-    return d?.ok && d.url ? { ok: true, url: d.url } : { ok: false, error: d?.error ?? 'failed' };
-  }
-  if (mode === 'video' && video.downloadUrl) return { ok: true, url: video.downloadUrl };
-  return { ok: false, error: mode === 'audio' ? 'Audio extraction is TikTok-only for now.' : 'No media file available for this video.' };
+  const { data, error } = await supabase.functions.invoke('vt-download', { body: { url: video.url, videoId: video.id, mode } });
+  if (error) return { ok: false, error: await fnErrorMessage(error) };
+  const d = data as { ok?: boolean; url?: string; error?: string } | null;
+  return d?.ok && d.url ? { ok: true, url: d.url } : { ok: false, error: d?.error ?? 'failed' };
 }
 
 /** Admin: list the creators that exist in ViewTrack (to import into the app). */

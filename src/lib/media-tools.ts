@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { fnErrorMessage } from '@/lib/viewtrack';
 
 /**
  * Web-only media helpers: fetch a video through the vt-download proxy (the
@@ -9,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 /** Fetch a (cross-origin) media file through the vt-download proxy. */
 export async function fetchMediaBlob(mediaUrl: string): Promise<Blob> {
   const { data, error } = await supabase.functions.invoke('vt-download', { body: { proxyUrl: mediaUrl } });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await fnErrorMessage(error));
   if (!(data instanceof Blob)) throw new Error('proxy did not return media');
   return data;
 }

@@ -185,29 +185,39 @@ export function VideosGrid() {
   async function batchDownload(kind: 'videos' | 'audios' | 'merged') {
     const vids = sorted.filter((v) => sel.has(v.id));
     if (!vids.length || dlMsg) return;
-    try {
-      const merged: AudioBuffer[] = [];
-      for (const [i, v] of vids.entries()) {
-        setDlMsg(`${kind === 'videos' ? 'downloading' : 'extracting audio'} ${i + 1}/${vids.length}…`);
+    const merged: AudioBuffer[] = [];
+    const failures: string[] = [];
+    for (const [i, v] of vids.entries()) {
+      setDlMsg(`${kind === 'videos' ? 'downloading' : 'extracting audio'} ${i + 1}/${vids.length}…`);
+      try {
         const r = await vtDownloadMedia(v, 'video');
-        if (!r.ok || !r.url) throw new Error(r.error ?? `no media for @${v.accountUsername}`);
-        const blob = await fetchMediaBlob(r.url);
+        if (!r.ok || !r.url) throw new Error(r.error ?? 'no media');
         const base = `${safeName(v.accountUsername)}-${v.id.slice(-8)}`;
-        if (kind === 'videos') saveBlob(blob, `${base}.mp4`);
-        else {
-          const buf = await decodeAudio(blob);
+        if (kind === 'videos') {
+          try {
+            saveBlob(await fetchMediaBlob(r.url), `${base}.mp4`);
+          } catch {
+            // Meta's CDN blocks our proxy IPs — the browser can still grab it directly
+            window.open(r.url, '_blank');
+          }
+        } else {
+          const buf = await decodeAudio(await fetchMediaBlob(r.url));
           if (kind === 'audios') saveBlob(encodeWav([buf]), `${base}.wav`);
           else merged.push(buf);
         }
+      } catch (e) {
+        const msg = v.platform === 'instagram' && kind !== 'videos'
+          ? 'Instagram audio extraction is blocked by their CDN for now'
+          : (e as Error).message;
+        failures.push(`@${v.accountUsername}: ${msg}`);
       }
-      if (kind === 'merged') {
-        setDlMsg('merging…');
-        saveBlob(encodeWav(merged), `combined-${vids.length}-audios.wav`);
-      }
-    } catch (e) {
-      if (Platform.OS === 'web') window.alert(`Download failed: ${(e as Error).message}`);
+    }
+    if (kind === 'merged' && merged.length) {
+      setDlMsg('merging…');
+      saveBlob(encodeWav(merged), `combined-${merged.length}-audios.wav`);
     }
     setDlMsg(null);
+    if (failures.length && Platform.OS === 'web') window.alert(`Some downloads failed:\n${[...new Set(failures)].join('\n')}`);
   }
 
   const tfLabel = (TFS.find((t) => t.value === timeframe)?.label ?? '').toLowerCase();
