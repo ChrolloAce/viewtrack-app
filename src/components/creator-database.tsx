@@ -567,17 +567,19 @@ function PendingRow({ pc }: { pc: PendingCreator }) {
   );
 }
 
-/** Admin: add a creator — pick from the ViewTrack creator list or type a name. */
+/** Admin: add creators — multi-select from the ViewTrack list (or type names),
+ *  then get every invite code at once. */
 function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const theme = useTheme();
   const [vtCreators, setVtCreators] = useState<VtCreator[]>([]);
   const [loadingVt, setLoadingVt] = useState(true);
   const [search, setSearch] = useState('');
   const [manual, setManual] = useState(false);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [code, setCode] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [names, setNames] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
+  const [results, setResults] = useState<{ name: string; code: string }[] | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -589,28 +591,49 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
   }, [visible]);
 
   function reset() {
-    setName('');
-    setCode(null);
-    setCopied(false);
-    setBusy(false);
+    setNames('');
+    setResults(null);
+    setCopiedKey(null);
+    setBusyMsg(null);
     setManual(false);
     setSearch('');
+    setPicked(new Set());
     onClose();
   }
-  async function add(creatorName: string, vtCreatorId?: string) {
-    if (!creatorName.trim() || busy) return;
-    setBusy(true);
-    // ViewTrack already knows this creator's accounts — they auto-link server-side
-    const r = await addPendingCreator(creatorName.trim(), vtCreatorId);
-    setBusy(false);
-    if (r.code) {
-      setName(creatorName.trim());
-      setCode(r.code);
+
+  const togglePick = (id: string) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  async function runAdds(items: { name: string; vtId?: string }[]) {
+    if (!items.length || busyMsg) return;
+    const out: { name: string; code: string }[] = [];
+    for (const [i, it] of items.entries()) {
+      setBusyMsg(`adding ${i + 1}/${items.length}…`);
+      const r = await addPendingCreator(it.name, it.vtId);
+      if (r.code) out.push({ name: it.name, code: r.code });
     }
+    setBusyMsg(null);
+    setResults(out);
   }
-  function copy() {
-    if (Platform.OS === 'web') (navigator as unknown as { clipboard?: { writeText: (s: string) => void } }).clipboard?.writeText(code ?? '');
-    setCopied(true);
+
+  const addPicked = () => runAdds(vtCreators.filter((c) => picked.has(c.id)).map((c) => ({ name: c.name, vtId: c.id })));
+  const addManual = () =>
+    runAdds(
+      names
+        .split(/[\n,]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((name) => ({ name })),
+    );
+
+  function copyText(key: string, text: string) {
+    if (Platform.OS === 'web') (navigator as unknown as { clipboard?: { writeText: (s: string) => void } }).clipboard?.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1500);
   }
 
   const filtered = vtCreators.filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()));
@@ -619,19 +642,38 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
     <Modal visible={visible} transparent animationType="fade" onRequestClose={reset}>
       <Pressable style={styles.modalBackdrop} onPress={reset}>
         <Pressable style={[styles.addModal, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => {}}>
-          {code ? (
+          {results ? (
             <>
               <View style={[styles.addIcon, { backgroundColor: theme.success }]}>
                 <Ionicons name="checkmark" size={26} color="#fff" />
               </View>
-              <ThemedText style={styles.addTitle}>{name} added</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-                Share this invite code — when they sign up with it, they're linked to this creator and marked active.
+              <ThemedText style={styles.addTitle}>
+                {results.length} creator{results.length === 1 ? '' : 's'} added
               </ThemedText>
-              <Pressable onPress={copy} style={[styles.bigCode, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-                <ThemedText style={styles.bigCodeText}>{code}</ThemedText>
-                <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={18} color={theme.text} />
-              </Pressable>
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                Send each creator their code — signing up with it claims their profile.
+              </ThemedText>
+              <ScrollView style={{ alignSelf: 'stretch', maxHeight: 280 }} contentContainerStyle={{ gap: Spacing.one + 2 }}>
+                {results.map((r) => (
+                  <Pressable
+                    key={r.code}
+                    onPress={() => copyText(r.code, r.code)}
+                    style={[styles.codeRow, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+                    <ThemedText style={{ fontWeight: '800', flex: 1 }} numberOfLines={1}>
+                      {r.name}
+                    </ThemedText>
+                    <ThemedText style={styles.codeText}>{r.code}</ThemedText>
+                    <Ionicons name={copiedKey === r.code ? 'checkmark' : 'copy-outline'} size={15} color={theme.textSecondary} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {results.length > 1 && (
+                <Pressable
+                  onPress={() => copyText('all', results.map((r) => `${r.name}: ${r.code}`).join('\n'))}
+                  style={[styles.addBtn, { backgroundColor: theme.card, borderWidth: Border.width, borderColor: theme.border }]}>
+                  <ThemedText style={[styles.addBtnText, { color: theme.text }]}>{copiedKey === 'all' ? '✓ copied' : 'Copy all codes'}</ThemedText>
+                </Pressable>
+              )}
               <Pressable onPress={reset} style={[styles.addBtn, { backgroundColor: theme.primary }]}>
                 <ThemedText style={[styles.addBtnText, { color: theme.primaryText }]}>Done</ThemedText>
               </Pressable>
@@ -640,18 +682,19 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
             <>
               <ThemedText style={styles.addTitle}>Add by name</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-                They'll show as “invited” until they sign up with the code.
+                One per line (or comma-separated) — each gets their own invite code.
               </ThemedText>
               <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Creator name"
+                value={names}
+                onChangeText={setNames}
+                placeholder={'Jane Doe\nJohn Smith'}
                 placeholderTextColor={theme.textSecondary}
-                style={[styles.addInput, { color: theme.text, borderColor: theme.border }]}
+                multiline
+                style={[styles.addInput, { color: theme.text, borderColor: theme.border, height: 110, paddingTop: 12, textAlignVertical: 'top' }]}
                 autoFocus
               />
-              <Pressable onPress={() => add(name)} disabled={!name.trim() || busy} style={[styles.addBtn, { backgroundColor: name.trim() ? theme.primary : theme.backgroundElement }]}>
-                <ThemedText style={[styles.addBtnText, { color: name.trim() ? theme.primaryText : theme.textSecondary }]}>{busy ? 'Adding…' : 'Add creator'}</ThemedText>
+              <Pressable onPress={addManual} disabled={!names.trim() || !!busyMsg} style={[styles.addBtn, { backgroundColor: names.trim() ? theme.primary : theme.backgroundElement }]}>
+                <ThemedText style={[styles.addBtnText, { color: names.trim() ? theme.primaryText : theme.textSecondary }]}>{busyMsg ?? 'Add creators'}</ThemedText>
               </Pressable>
               <Pressable onPress={() => setManual(false)}>
                 <ThemedText type="smallBold" style={{ color: theme.primary }}>
@@ -661,9 +704,9 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
             </>
           ) : (
             <>
-              <ThemedText style={styles.addTitle}>Add a creator</ThemedText>
+              <ThemedText style={styles.addTitle}>Add creators</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-                Pick one from your ViewTrack creators.
+                Tap to select as many as you want, then add them all at once.
               </ThemedText>
               <View style={[styles.searchWrap, { backgroundColor: theme.backgroundElement, borderColor: theme.border, flexGrow: 0, flexBasis: 'auto', alignSelf: 'stretch' }]}>
                 <Ionicons name="search" size={15} color={theme.textSecondary} />
@@ -682,27 +725,38 @@ function AddCreatorModal({ visible, onClose }: { visible: boolean; onClose: () =
                       {vtCreators.length === 0 ? 'No creators in ViewTrack yet.' : 'No matches.'}
                     </ThemedText>
                   ) : (
-                    filtered.map((c) => (
-                      <Pressable
-                        key={c.id}
-                        onPress={() => add(c.name, c.id)}
-                        disabled={busy}
-                        style={({ pressed }) => [styles.vtRow, { borderColor: theme.border }, pressed && { backgroundColor: theme.backgroundElement }]}>
-                        <BrutalAvatar name={c.name} uri={c.avatarUrl} size={34} />
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={{ fontWeight: '800' }} numberOfLines={1}>
-                            {c.name}
-                          </ThemedText>
-                          <ThemedText type="small" themeColor="textSecondary">
-                            {c.accountCount} {c.accountCount === 1 ? 'account' : 'accounts'} · {compact(c.totalViews)} views
-                          </ThemedText>
-                        </View>
-                        <Ionicons name="add-circle" size={24} color={theme.primary} />
-                      </Pressable>
-                    ))
+                    filtered.map((c) => {
+                      const on = picked.has(c.id);
+                      return (
+                        <Pressable
+                          key={c.id}
+                          onPress={() => togglePick(c.id)}
+                          disabled={!!busyMsg}
+                          style={({ pressed }) => [styles.vtRow, { borderColor: on ? theme.primary : theme.border, borderWidth: on ? 2 : Border.width, backgroundColor: on ? theme.primaryMuted : undefined }, pressed && { backgroundColor: theme.backgroundElement }]}>
+                          <BrutalAvatar name={c.name} uri={c.avatarUrl} size={34} />
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={{ fontWeight: '800' }} numberOfLines={1}>
+                              {c.name}
+                            </ThemedText>
+                            <ThemedText type="small" themeColor="textSecondary">
+                              {c.accountCount} {c.accountCount === 1 ? 'account' : 'accounts'} · {compact(c.totalViews)} views
+                            </ThemedText>
+                          </View>
+                          <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={on ? theme.primary : theme.textSecondary} />
+                        </Pressable>
+                      );
+                    })
                   )}
                 </ScrollView>
               )}
+              <Pressable
+                onPress={addPicked}
+                disabled={!picked.size || !!busyMsg}
+                style={[styles.addBtn, { backgroundColor: picked.size ? theme.primary : theme.backgroundElement }]}>
+                <ThemedText style={[styles.addBtnText, { color: picked.size ? theme.primaryText : theme.textSecondary }]}>
+                  {busyMsg ?? (picked.size ? `Add ${picked.size} creator${picked.size === 1 ? '' : 's'}` : 'Select creators above')}
+                </ThemedText>
+              </Pressable>
               <Pressable onPress={() => setManual(true)}>
                 <ThemedText type="smallBold" style={{ color: theme.primary }}>
                   + Add by name instead
@@ -1695,6 +1749,7 @@ const styles = StyleSheet.create({
   addBtnText: { fontSize: 15, fontWeight: '900' },
   addIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
   bigCode: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, alignSelf: 'stretch', height: 56, borderRadius: Radius.md, borderWidth: Border.widthThick },
+  codeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
   bigCodeText: { fontSize: 22, fontWeight: '900', letterSpacing: 2 },
   vtList: { alignSelf: 'stretch', maxHeight: 300 },
   vtRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width, marginBottom: Spacing.one + 2 },
