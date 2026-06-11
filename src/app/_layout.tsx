@@ -39,11 +39,12 @@ function RootNavigator() {
   const role = (profile as { role?: string } | null)?.role;
   // Everyone must accept the community guidelines + terms before the app.
   const needsTerms = !!session && !!profile && !(profile as { accepted_terms_at?: string | null }).accepted_terms_at;
-  // A new account starts as 'customer'. Before using the app they must set a
-  // name + photo, then join a project with a code (which upgrades their role).
+  // A new account starts as 'customer'. They enter their code FIRST — invited
+  // creators inherit name + photo from the profile they claim, so only
+  // accounts still missing those see the name/photo step afterwards.
   const profileIncomplete = !!session && !!profile && (!(profile.full_name ?? '').trim() || !profile.avatar_url);
-  const needsOnboarding = !needsTerms && !!session && !!profile && (role === 'creator' || role === 'customer') && profileIncomplete;
-  const needsJoin = !needsTerms && !!session && !!profile && role === 'customer' && !profileIncomplete;
+  const needsJoin = !needsTerms && !!session && !!profile && role === 'customer';
+  const needsOnboarding = !needsTerms && !needsJoin && !!session && !!profile && role === 'creator' && profileIncomplete;
 
   // Route guard: signed-out users go to auth; signed-in users never sit on an
   // auth screen; new accounts agree to terms, then set name+photo, then join a
@@ -61,10 +62,10 @@ function RootNavigator() {
       router.replace('/');
     } else if (session && needsTerms && !onTerms) {
       router.replace('/terms');
-    } else if (session && !needsTerms && needsOnboarding && !onOnboarding) {
-      router.replace('/onboarding');
-    } else if (session && !needsTerms && !needsOnboarding && needsJoin && !onJoin) {
+    } else if (session && !needsTerms && needsJoin && !onJoin) {
       router.replace('/join-project');
+    } else if (session && !needsTerms && !needsJoin && needsOnboarding && !onOnboarding) {
+      router.replace('/onboarding');
     } else if (session && !needsTerms && !needsOnboarding && !needsJoin && (onTerms || onOnboarding || onJoin)) {
       router.replace('/');
     }
