@@ -80,6 +80,50 @@ export async function videoToWav(mediaUrl: string): Promise<Blob> {
 
 export const safeName = (s: string) => (s || 'video').replace(/[^\w.-]/g, '');
 
+/** "00:38" (or "01:02") → seconds. */
+export function timestampToSeconds(ts?: string): number | null {
+  const m = ts?.match(/^(\d+):(\d{2})$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/**
+ * Pull JPEG frames out of a video file at the given second marks (web only):
+ * hidden <video> element + seek + canvas — no ffmpeg needed.
+ */
+export async function extractFramesFromVideo(blob: Blob, seconds: number[]): Promise<Map<number, Blob>> {
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement('video');
+  video.src = url;
+  video.muted = true;
+  video.playsInline = true;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error('video failed to load'));
+    });
+    const out = new Map<number, Blob>();
+    for (const s of seconds) {
+      // +0.5s so the overlay has actually rendered by the captured frame
+      video.currentTime = Math.min(s + 0.5, Math.max(0, video.duration - 0.05));
+      await new Promise<void>((resolve) => {
+        video.onseeked = () => resolve();
+      });
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 480 / (video.videoWidth || 480));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx || !canvas.width) continue;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const b = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      if (b) out.set(s, b);
+    }
+    return out;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /** Snapshot the current frame of a playing <video> element as a PNG (web only). */
 export function captureFrame(video: HTMLVideoElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
