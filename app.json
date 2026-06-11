@@ -66,7 +66,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "MTP uses the microphone so you can send voice messages."
+          "microphonePermission": "MTP uses the microphone so you can send voice messages.",
+          "enableBackgroundPlayback": false
         }
       ],
       [
