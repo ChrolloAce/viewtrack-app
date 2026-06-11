@@ -84,43 +84,6 @@ export function VideosGrid() {
   const [frameMsg, setFrameMsg] = useState<string | null>(null);
   const framesChecked = useRef<Set<string>>(new Set());
   const framesRunning = useRef(false);
-
-  // After an analysis lands, capture its overlay frames automatically:
-  // proxy-fetch the mp4, seek a hidden <video> to each overlay timestamp,
-  // canvas-capture, upload to the overlay-frames bucket. The slider derives
-  // the URLs, so frames appear without any further wiring.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || framesRunning.current) return;
-    const todo = Object.entries(analyses).filter(
-      ([id, st]) => st.status === 'done' && st.overlays?.length && !framesChecked.current.has(id) && videos.some((v) => v.id === id),
-    );
-    if (!todo.length) return;
-    framesRunning.current = true;
-    (async () => {
-      for (const [id, st] of todo) {
-        framesChecked.current.add(id);
-        try {
-          const { data: existing } = await supabase.storage.from('overlay-frames').list(id, { limit: 1 });
-          if (existing?.length) continue; // already captured
-          const v = videos.find((x) => x.id === id);
-          if (!v) continue;
-          const secs = [...new Set((st.overlays ?? []).map((o) => timestampToSeconds(o.timestamp)).filter((n): n is number => n != null))];
-          if (!secs.length) continue;
-          setFrameMsg(`capturing overlay frames · @${v.accountUsername}…`);
-          const r = await vtDownloadMedia(v, 'video');
-          if (!r.ok || !r.url) continue;
-          const frames = await extractFramesFromVideo(await fetchMediaBlob(r.url), secs);
-          for (const [s, b] of frames) {
-            await supabase.storage.from('overlay-frames').upload(`${id}/${s}.jpg`, b, { upsert: true, contentType: 'image/jpeg' });
-          }
-        } catch {
-          /* IG CDN blocks the proxy — those keep the placeholder */
-        }
-      }
-      setFrameMsg(null);
-      framesRunning.current = false;
-    })();
-  }, [analyses, videos]);
   const { map: analyses } = useVideoAnalyses();
   const { reqs } = useFlagRequirements();
   const { clusters, byVideo, reload: reloadSections } = useSections();
@@ -198,6 +161,43 @@ export function VideosGrid() {
     else arr.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
     return arr;
   }, [videos, sort, flagFilter, flaggedById, sectionFilter, byVideo, platformFilter, creatorFilter, creators, groupFilter, profileLabels]);
+
+  // After an analysis lands, capture its overlay frames automatically:
+  // proxy-fetch the mp4, seek a hidden <video> to each overlay timestamp,
+  // canvas-capture, upload to the overlay-frames bucket. The slider derives
+  // the URLs, so frames appear without any further wiring.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || framesRunning.current) return;
+    const todo = Object.entries(analyses).filter(
+      ([id, st]) => st.status === 'done' && st.overlays?.length && !framesChecked.current.has(id) && videos.some((v) => v.id === id),
+    );
+    if (!todo.length) return;
+    framesRunning.current = true;
+    (async () => {
+      for (const [id, st] of todo) {
+        framesChecked.current.add(id);
+        try {
+          const { data: existing } = await supabase.storage.from('overlay-frames').list(id, { limit: 1 });
+          if (existing?.length) continue; // already captured
+          const v = videos.find((x) => x.id === id);
+          if (!v) continue;
+          const secs = [...new Set((st.overlays ?? []).map((o) => timestampToSeconds(o.timestamp)).filter((n): n is number => n != null))];
+          if (!secs.length) continue;
+          setFrameMsg(`capturing overlay frames · @${v.accountUsername}…`);
+          const r = await vtDownloadMedia(v, 'video');
+          if (!r.ok || !r.url) continue;
+          const frames = await extractFramesFromVideo(await fetchMediaBlob(r.url), secs);
+          for (const [s, b] of frames) {
+            await supabase.storage.from('overlay-frames').upload(`${id}/${s}.jpg`, b, { upsert: true, contentType: 'image/jpeg' });
+          }
+        } catch {
+          /* IG CDN blocks the proxy — those keep the placeholder */
+        }
+      }
+      setFrameMsg(null);
+      framesRunning.current = false;
+    })();
+  }, [analyses, videos]);
 
   // grouped view: one tile per cross-post (the top-performing copy represents
   // the group; its tile shows combined views + every platform's icon)
