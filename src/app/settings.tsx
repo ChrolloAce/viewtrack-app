@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalAvatar, BrutalButton, BrutalCard, BrutalInput } from '@/components/brutal';
@@ -16,7 +16,10 @@ import { badgeFor } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
 import { useProgress } from '@/lib/use-progress';
 import { useStats } from '@/lib/use-stats';
-import { deleteLink, detectPlatform, myLinks, submitLink, type AccountLink, type VtAccount } from '@/lib/viewtrack';
+import { deleteLink, deleteOwnAccount, detectPlatform, myLinks, submitLink, type AccountLink, type VtAccount } from '@/lib/viewtrack';
+
+const PRIVACY_URL = 'https://viewtrack-console.vercel.app/privacy';
+const TERMS_URL = 'https://viewtrack-console.vercel.app/terms';
 
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
 const PLATFORM_COLOR: Record<string, string> = { tiktok: '#000000', instagram: '#E1306C', youtube: '#FF0000' };
@@ -34,6 +37,69 @@ function randomCode(prefix: string, len: number) {
   let out = '';
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return prefix + out;
+}
+
+function LegalRow({ label, url }: { label: string; url: string }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={() => (Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url))}
+      style={({ pressed }) => [styles.legalRow, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
+      <Ionicons name="document-text-outline" size={16} color={theme.textSecondary} />
+      <ThemedText style={{ fontWeight: '700', flex: 1, fontSize: 14 }}>{label}</ThemedText>
+      <Ionicons name="open-outline" size={15} color={theme.textSecondary} />
+    </Pressable>
+  );
+}
+
+/** App Store 5.1.1(v): users must be able to permanently delete their account in-app. */
+function DeleteAccount() {
+  const theme = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setErr(null);
+    const r = await deleteOwnAccount();
+    if (r.ok) {
+      await supabase.auth.signOut();
+    } else {
+      setErr(r.error ?? 'Could not delete your account — try again or contact support.');
+      setBusy(false);
+    }
+  }
+
+  function confirmDelete() {
+    const msg = 'This permanently deletes your account and ALL your data — linked accounts, stats, levels, payout history and messages. This cannot be undone.';
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${msg}\n\nDelete your account forever?`)) run();
+    } else {
+      Alert.alert('Delete account?', msg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete forever', style: 'destructive', onPress: run },
+      ]);
+    }
+  }
+
+  return (
+    <View style={{ gap: 6, alignItems: 'center', paddingBottom: Spacing.four }}>
+      <Pressable onPress={confirmDelete} disabled={busy} hitSlop={8}>
+        {busy ? (
+          <ActivityIndicator size="small" color={theme.danger} />
+        ) : (
+          <ThemedText type="small" style={{ color: theme.danger, fontWeight: '800', textDecorationLine: 'underline' }}>
+            delete my account
+          </ThemedText>
+        )}
+      </Pressable>
+      {!!err && (
+        <ThemedText type="small" themeColor="danger" style={{ textAlign: 'center' }}>
+          {err}
+        </ThemedText>
+      )}
+    </View>
+  );
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -223,7 +289,15 @@ export default function SettingsScreen() {
 
           <ChangePassword />
 
+          {/* legal — App Store requires these to be reachable in-app */}
+          <Section title="about">
+            <LegalRow label="Privacy Policy" url={PRIVACY_URL} />
+            <LegalRow label="Terms of Service" url={TERMS_URL} />
+          </Section>
+
           <BrutalButton label="sign out" variant="danger" onPress={() => supabase.auth.signOut()} />
+
+          {!isAdmin && <DeleteAccount />}
         </ScrollView>
 
         <LinkAccountsModal visible={linkOpen} onClose={() => setLinkOpen(false)} onDone={loadLinks} />
@@ -491,6 +565,7 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 20, fontWeight: '900' },
   pencil: { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   section: { gap: Spacing.two },
+  legalRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.two + 2, borderRadius: Radius.md, borderWidth: Border.width },
   connectedHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.three, height: 36, borderRadius: Radius.sm, borderWidth: Border.width },
   linkBtnText: { fontSize: 13, fontWeight: '800' },

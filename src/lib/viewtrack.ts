@@ -338,6 +338,14 @@ export async function addAccountsBulk(profileId: string, input: { urls?: string[
   return d?.ok ? { ok: true, queued: d.queued } : { ok: false, error: d?.error ?? 'failed' };
 }
 
+/** Permanently delete the signed-in user's OWN account and all their data (App Store 5.1.1(v)). */
+export async function deleteOwnAccount(): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-account' } });
+  if (error) return { ok: false, error: await fnErrorMessage(error) };
+  const d = data as { ok?: boolean; error?: string } | null;
+  return d?.ok ? { ok: true } : { ok: false, error: d?.error ?? 'failed' };
+}
+
 /** Admin: hard-delete a creator — wipes their data and removes the login. */
 export async function deleteCreatorAccount(profileId: string): Promise<{ ok: boolean; error?: string }> {
   const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-creator', profileId } });
