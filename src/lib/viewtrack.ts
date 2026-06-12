@@ -325,6 +325,19 @@ export async function addAccountByUrl(profileId: string, url: string): Promise<{
   return d?.ok ? { ok: true } : { ok: false, error: d?.error ?? 'failed' };
 }
 
+/**
+ * Admin: attach MANY accounts to a creator in one shot — existing ViewTrack
+ * account ids and/or pasted profile URLs. The server queues a background job
+ * and returns immediately, so it's safe to navigate away; rows appear via
+ * realtime as each account links.
+ */
+export async function addAccountsBulk(profileId: string, input: { urls?: string[]; accountIds?: string[] }): Promise<{ ok: boolean; queued?: number; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'add-accounts', profileId, ...input } });
+  if (error) return { ok: false, error: await fnErrorMessage(error) };
+  const d = data as { ok?: boolean; queued?: number; error?: string } | null;
+  return d?.ok ? { ok: true, queued: d.queued } : { ok: false, error: d?.error ?? 'failed' };
+}
+
 /** Admin: hard-delete a creator — wipes their data and removes the login. */
 export async function deleteCreatorAccount(profileId: string): Promise<{ ok: boolean; error?: string }> {
   const { data, error } = await supabase.functions.invoke('viewtrack', { body: { action: 'delete-creator', profileId } });

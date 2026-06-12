@@ -11,7 +11,7 @@ import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { addAccountByUrl, detectPlatform, vtAccounts, type VtAccount, type VtProject } from '@/lib/viewtrack';
+import { addAccountsBulk, detectPlatform, vtAccounts, type VtAccount, type VtProject } from '@/lib/viewtrack';
 
 const sb = supabase as unknown as { from: (t: string) => any };
 const PLATFORM_ICON: Record<string, string> = { tiktok: 'logo-tiktok', instagram: 'logo-instagram', youtube: 'logo-youtube' };
@@ -42,6 +42,8 @@ export function AccountManager({
   const { session } = useAuth();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [picker, setPicker] = useState<null | { mode: 'add' | 'replace'; link?: ExistingLink }>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
 
   const acctFor = (link: ExistingLink) =>
     linked.find((a) => a.id === link.vt_account_id) ?? null;
@@ -124,10 +126,27 @@ export function AccountManager({
         })
       )}
 
-      <BrutalButton label="+ Add account" variant="neutral" onPress={() => setPicker({ mode: 'add' })} />
+      <BrutalButton label="+ Add accounts" onPress={() => setAddOpen(true)} />
+      {!!queuedMsg && (
+        <ThemedText type="small" style={{ color: theme.success }}>
+          {queuedMsg}
+        </ThemedText>
+      )}
 
-      {/* manual add — any profile URL, tracked in ViewTrack automatically */}
-      <ManualAddRow profileId={creator.id} onChanged={onChanged} />
+      {addOpen && (
+        <AddAccountsModal
+          creator={creator}
+          projects={projects}
+          excludeIds={new Set(existing.map((l) => l.vt_account_id))}
+          onClose={() => setAddOpen(false)}
+          onQueued={(n) => {
+            setAddOpen(false);
+            setQueuedMsg(`✓ ${n} account${n === 1 ? '' : 's'} queued — syncing in the background, safe to leave this page.`);
+            setTimeout(() => setQueuedMsg(null), 10000);
+            onChanged();
+          }}
+        />
+      )}
 
       <AccountPicker
         visible={!!picker}
@@ -142,59 +161,153 @@ export function AccountManager({
   );
 }
 
-/** Paste any TikTok / Instagram / YouTube profile URL — ViewTrack tracks it
- *  automatically, no need for the account to exist there first. */
-function ManualAddRow({ profileId, onChanged }: { profileId: string; onChanged: () => void }) {
+/** The add-accounts popup: multi-select from the ViewTrack project's
+ *  accounts AND/OR paste profile URLs (one per line) — fired as ONE
+ *  background job, so closing the page is safe. */
+function AddAccountsModal({
+  creator,
+  projects,
+  excludeIds,
+  onClose,
+  onQueued,
+}: {
+  creator: Creator;
+  projects: VtProject[];
+  excludeIds: Set<string>;
+  onClose: () => void;
+  onQueued: (n: number) => void;
+}) {
   const theme = useTheme();
-  const [url, setUrl] = useState('');
+  const [accounts, setAccounts] = useState<VtAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [urls, setUrls] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const platform = detectPlatform(url);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function add() {
-    if (!url.trim() || busy) return;
-    setBusy(true);
-    setMsg(null);
-    const r = await addAccountByUrl(profileId, url.trim());
-    setBusy(false);
-    if (r.ok) {
-      setUrl('');
-      setMsg('✓ added — ViewTrack is syncing it now');
-      onChanged();
-    } else {
-      setMsg(r.error ?? 'failed');
+  useEffect(() => {
+    const pid = projects[0]?.id;
+    if (!pid) {
+      setLoading(false);
+      return;
     }
-    setTimeout(() => setMsg(null), 6000);
+    vtAccounts(pid).then((a) => {
+      setAccounts(a.filter((x) => !excludeIds.has(x.id)));
+      setLoading(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const urlList = urls
+    .split(/\n/)
+    .map((s) => s.trim())
+    .filter((s) => s && detectPlatform(s));
+  const total = sel.size + urlList.length;
+
+  const toggle = (id: string) =>
+    setSel((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  async function queue() {
+    if (!total || busy) return;
+    setBusy(true);
+    setErr(null);
+    const r = await addAccountsBulk(creator.id, { accountIds: [...sel], urls: urlList });
+    setBusy(false);
+    if (r.ok) onQueued(r.queued ?? total);
+    else setErr(r.error ?? 'failed');
   }
 
+  const filtered = accounts.filter((a) => !search.trim() || a.username.toLowerCase().includes(search.trim().toLowerCase()));
+
   return (
-    <View style={{ gap: 6 }}>
-      <View style={[styles.manualRow, { borderColor: theme.border, backgroundColor: theme.card }]}>
-        <Ionicons name={(platform ? PLATFORM_ICON[platform] : 'link-outline') as never} size={16} color={platform ? PLATFORM_COLOR[platform] : theme.textSecondary} />
-        <TextInput
-          value={url}
-          onChangeText={setUrl}
-          placeholder="or paste any profile URL (tiktok.com/@…, instagram.com/…)"
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={[styles.manualInput, { color: theme.text }]}
-          onSubmitEditing={add}
-        />
-        <Pressable onPress={add} disabled={!url.trim() || busy} style={[styles.manualBtn, { backgroundColor: url.trim() ? theme.primary : theme.backgroundElement }]}>
-          {busy ? (
-            <ActivityIndicator size="small" color={theme.primaryText} />
-          ) : (
-            <ThemedText style={{ color: url.trim() ? theme.primaryText : theme.textSecondary, fontWeight: '900', fontSize: 13 }}>add</ThemedText>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.addBackdrop} onPress={onClose}>
+        <Pressable style={[styles.addPanel, { backgroundColor: theme.card, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]} onPress={() => {}}>
+          <View style={styles.addHead}>
+            <ThemedText style={styles.addTitle} numberOfLines={1}>
+              add accounts · {creator.full_name}
+            </ThemedText>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={20} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+
+          <View style={[styles.manualRow, { borderColor: theme.border, backgroundColor: theme.backgroundElement, height: 40 }]}>
+            <Ionicons name="search" size={15} color={theme.textSecondary} />
+            <TextInput value={search} onChangeText={setSearch} placeholder="Search ViewTrack accounts" placeholderTextColor={theme.textSecondary} style={[styles.manualInput, { color: theme.text }]} />
+          </View>
+
+          <ScrollView style={{ maxHeight: 240 }} contentContainerStyle={{ gap: 5 }}>
+            {loading ? (
+              <ActivityIndicator color={theme.primary} style={{ paddingVertical: 20 }} />
+            ) : filtered.length === 0 ? (
+              <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', paddingVertical: 12 }}>
+                {accounts.length === 0 ? 'No unlinked ViewTrack accounts — paste URLs below.' : 'No matches.'}
+              </ThemedText>
+            ) : (
+              filtered.map((a) => {
+                const on = sel.has(a.id);
+                return (
+                  <Pressable
+                    key={a.id}
+                    onPress={() => toggle(a.id)}
+                    style={({ pressed }) => [styles.selRow, { borderColor: on ? theme.primary : theme.border, borderWidth: on ? 2 : Border.width, backgroundColor: on ? theme.primaryMuted : undefined }, pressed && { opacity: 0.7 }]}>
+                    {a.profilePicUrl ? <Image source={{ uri: a.profilePicUrl }} style={styles.selPic} contentFit="cover" /> : <View style={[styles.selPic, { backgroundColor: theme.backgroundElement }]} />}
+                    <Ionicons name={(PLATFORM_ICON[a.platform] ?? 'link') as never} size={14} color={PLATFORM_COLOR[a.platform] ?? theme.text} />
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={{ fontWeight: '800' }} numberOfLines={1}>
+                        @{a.username}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {compact(a.followerCount)} followers · {a.totalVideos} videos
+                      </ThemedText>
+                    </View>
+                    <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={on ? theme.primary : theme.textSecondary} />
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+
+          <ThemedText type="smallBold" themeColor="textSecondary">
+            or paste profile URLs — one per line (added to ViewTrack automatically)
+          </ThemedText>
+          <TextInput
+            value={urls}
+            onChangeText={setUrls}
+            placeholder={'tiktok.com/@handle\ninstagram.com/handle'}
+            placeholderTextColor={theme.textSecondary}
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.urlBox, { color: theme.text, borderColor: theme.border }]}
+          />
+
+          {!!err && (
+            <ThemedText type="small" themeColor="danger">
+              {err}
+            </ThemedText>
           )}
+          <Pressable
+            onPress={queue}
+            disabled={!total || busy}
+            style={({ pressed }) => [styles.queueBtn, { backgroundColor: total ? theme.primary : theme.backgroundElement, borderColor: theme.border }, total ? brutalShadow(theme.shadow, 3) : null, pressed && { transform: [{ translateX: 2 }, { translateY: 2 }] }]}>
+            {busy ? (
+              <ActivityIndicator size="small" color={theme.primaryText} />
+            ) : (
+              <ThemedText style={{ color: total ? theme.primaryText : theme.textSecondary, fontWeight: '900', fontSize: 15 }}>
+                {total ? `Add ${total} account${total === 1 ? '' : 's'} (runs in background)` : 'Select accounts or paste URLs'}
+              </ThemedText>
+            )}
+          </Pressable>
         </Pressable>
-      </View>
-      {!!msg && (
-        <ThemedText type="small" style={{ color: msg.startsWith('✓') ? theme.success : theme.danger }}>
-          {msg}
-        </ThemedText>
-      )}
-    </View>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -327,7 +440,14 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four, borderRadius: Radius.md, borderWidth: Border.width, borderStyle: 'dashed' },
   manualRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingLeft: Spacing.two + 2, paddingRight: 5, height: 46, borderRadius: Radius.md, borderWidth: Border.width },
   manualInput: { flex: 1, fontSize: 14, fontWeight: '600', height: '100%' },
-  manualBtn: { paddingHorizontal: Spacing.two + 4, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center', minWidth: 52 },
+  addBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.three },
+  addPanel: { width: '100%', maxWidth: 480, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
+  addHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
+  addTitle: { flex: 1, fontSize: 18, lineHeight: 24, fontWeight: '900' },
+  selRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
+  selPic: { width: 32, height: 32, borderRadius: 16 },
+  urlBox: { minHeight: 70, maxHeight: 120, borderRadius: Radius.md, borderWidth: Border.width, padding: Spacing.two + 2, fontSize: 14, fontWeight: '600', textAlignVertical: 'top' },
+  queueBtn: { alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: Radius.md, borderWidth: Border.width },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2, padding: Spacing.two, borderRadius: Radius.md, borderWidth: Border.width },
   pic: { width: 44, height: 44, borderRadius: 22 },
   handleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
