@@ -215,48 +215,46 @@ export function CompetitorsBoard() {
             return (
               <BrutalCard key={app.track_id} style={styles.appCard} shadow={4}>
                 <View style={styles.appHead}>
-                  {app.icon ? <Image source={{ uri: app.icon }} style={styles.appIcon} contentFit="cover" /> : <View style={[styles.appIcon, { backgroundColor: theme.backgroundElement }]} />}
+                  {app.icon ? <Image source={{ uri: app.icon }} style={[styles.appIcon, { borderColor: theme.border }]} contentFit="cover" /> : <View style={[styles.appIcon, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]} />}
                   <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.appName} numberOfLines={1}>
+                    <ThemedText style={styles.appName} numberOfLines={2}>
                       {app.name}
                     </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                      {app.developer} · {app.category}
+                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+                      {[app.developer, app.category].filter(Boolean).join(' · ')}
                     </ThemedText>
                   </View>
-                  <Pressable onPress={() => refresh(app.track_id)} hitSlop={6} style={styles.iconBtn}>
-                    {busy === `r-${app.track_id}` ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="refresh" size={17} color={theme.text} />}
-                  </Pressable>
-                  <Pressable onPress={() => remove(app)} hitSlop={6} style={styles.iconBtn}>
-                    <Ionicons name="trash-outline" size={16} color={theme.danger} />
-                  </Pressable>
                 </View>
 
-                <View style={styles.metricsRow}>
-                  <Metric label="revenue" value={money(cur?.revenue_estimate ?? null)} strong />
-                  <Metric label="downloads" value={`${compact(cur?.downloads_estimate ?? null)}/mo`} />
+                <View style={styles.metricsGrid}>
+                  <Metric label="revenue / mo" value={money(cur?.revenue_estimate ?? null)} strong />
+                  <Metric label="downloads / mo" value={compact(cur?.downloads_estimate ?? null)} />
                   <Metric label="rank" value={cur?.rank != null ? `#${cur.rank}` : '—'} />
-                  <Metric label="rating" value={cur?.rating != null ? `★${Number(cur.rating).toFixed(2)}` : '—'} />
+                  <Metric label="rating" value={cur?.rating != null ? `★ ${Number(cur.rating).toFixed(2)}` : '—'} />
                 </View>
 
                 <MiniSpark series={series} />
 
                 {/* our creators promoting this app */}
-                <Pressable onPress={() => setCreatorPickFor(app)} style={[styles.creatorsRow, { borderColor: theme.border }]}>
+                <Pressable
+                  onPress={() => setCreatorPickFor(app)}
+                  style={({ pressed }) => [styles.creatorsRow, { borderColor: theme.border, backgroundColor: theme.background }, pressed && { opacity: 0.7 }]}>
                   {linked.length === 0 ? (
-                    <ThemedText type="small" themeColor="textSecondary">
-                      + link creators to see their views here
-                    </ThemedText>
+                    <>
+                      <Ionicons name="person-add-outline" size={15} color={theme.text} />
+                      <ThemedText style={{ fontWeight: '800', fontSize: 13, flex: 1 }}> add creators</ThemedText>
+                      <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                    </>
                   ) : (
                     <>
                       <View style={{ flexDirection: 'row' }}>
                         {linked.slice(0, 4).map((c, i) => (
                           <View key={c.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
-                            <BrutalAvatar name={c.full_name} uri={c.avatar_url} size={24} />
+                            <BrutalAvatar name={c.full_name} uri={c.avatar_url} size={26} />
                           </View>
                         ))}
                       </View>
-                      <ThemedText type="small" style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>
+                      <ThemedText style={{ fontWeight: '800', fontSize: 13, flex: 1 }} numberOfLines={1}>
                         {linked.length} creator{linked.length === 1 ? '' : 's'} · {compact(linkedViews)} views
                       </ThemedText>
                       <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
@@ -264,10 +262,19 @@ export function CompetitorsBoard() {
                   )}
                 </Pressable>
 
-                <Pressable onPress={() => setOpenApp(app)} style={({ pressed }) => [styles.historyBtn, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}>
-                  <Ionicons name="stats-chart" size={13} color={theme.text} />
-                  <ThemedText style={{ fontWeight: '800', fontSize: 13 }}> history</ThemedText>
-                </Pressable>
+                <View style={styles.cardActions}>
+                  <Pressable onPress={() => setOpenApp(app)} style={({ pressed }) => [styles.actionBtn, { borderColor: theme.border, backgroundColor: theme.primary }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+                    <Ionicons name="stats-chart" size={14} color={theme.primaryText} />
+                    <ThemedText style={[styles.actionText, { color: theme.primaryText }]}> history</ThemedText>
+                  </Pressable>
+                  <Pressable onPress={() => refresh(app.track_id)} style={({ pressed }) => [styles.actionBtn, { borderColor: theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+                    {busy === `r-${app.track_id}` ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="refresh" size={14} color={theme.text} />}
+                    <ThemedText style={styles.actionText}> refresh</ThemedText>
+                  </Pressable>
+                  <Pressable onPress={() => remove(app)} style={({ pressed }) => [styles.actionBtn, styles.actionIconOnly, { borderColor: theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+                    <Ionicons name="trash-outline" size={15} color={theme.danger} />
+                  </Pressable>
+                </View>
               </BrutalCard>
             );
           })}
@@ -293,28 +300,20 @@ export function CompetitorsBoard() {
 function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   const theme = useTheme();
   return (
-    <View style={{ flex: 1 }}>
-      <ThemedText style={[styles.metricValue, strong && { color: theme.primary }]} numberOfLines={1}>
-        {value}
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+    <View style={[styles.metricBox, { borderColor: theme.border, backgroundColor: strong ? theme.primary : theme.background }]}>
+      <ThemedText style={[styles.metricValue, { color: strong ? theme.primaryText : theme.text }]}>{value}</ThemedText>
+      <ThemedText type="small" style={{ color: strong ? theme.primaryText : theme.textSecondary, opacity: strong ? 0.9 : 1 }}>
         {label}
       </ThemedText>
     </View>
   );
 }
 
-/** 30-bar revenue sparkline from snapshots. */
+/** 30-bar revenue sparkline from snapshots (hidden until 2+ days exist). */
 function MiniSpark({ series }: { series: Snap[] }) {
   const theme = useTheme();
   const pts = series.slice(-30).map((s) => s.revenue_estimate ?? 0);
-  if (pts.length < 2) {
-    return (
-      <ThemedText type="small" themeColor="textSecondary">
-        revenue trend appears as daily snapshots accumulate
-      </ThemedText>
-    );
-  }
+  if (pts.length < 2) return null;
   const max = Math.max(...pts, 1);
   return (
     <View style={styles.spark}>
@@ -455,17 +454,20 @@ const styles = StyleSheet.create({
   hitIcon: { width: 40, height: 40, borderRadius: 9 },
   empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.six, borderRadius: Radius.lg, borderWidth: Border.width, borderStyle: 'dashed' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
-  appCard: { width: 360, gap: Spacing.two },
-  appHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  appIcon: { width: 44, height: 44, borderRadius: 10 },
-  appName: { fontSize: 16, lineHeight: 21, fontWeight: '900' },
-  iconBtn: { padding: 4 },
-  metricsRow: { flexDirection: 'row', gap: Spacing.two },
-  metricValue: { fontSize: 15, lineHeight: 20, fontWeight: '900' },
+  appCard: { width: 400, gap: Spacing.two + 2 },
+  appHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2 },
+  appIcon: { width: 52, height: 52, borderRadius: 12, borderWidth: Border.width },
+  appName: { fontSize: 17, lineHeight: 22, fontWeight: '900' },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  metricBox: { width: '47.5%', flexGrow: 1, gap: 1, paddingVertical: Spacing.two, paddingHorizontal: Spacing.two + 2, borderRadius: Radius.sm, borderWidth: Border.width },
+  metricValue: { fontSize: 19, lineHeight: 25, fontWeight: '900' },
   spark: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 36 },
   sparkBar: { flex: 1, borderRadius: 2 },
-  creatorsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderTopWidth: 1, paddingTop: Spacing.two },
-  historyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 34, borderRadius: Radius.sm, borderWidth: Border.width },
+  creatorsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: Border.width, borderRadius: Radius.sm, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.two },
+  cardActions: { flexDirection: 'row', gap: Spacing.two },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 38, borderRadius: Radius.sm, borderWidth: Border.width },
+  actionIconOnly: { flex: 0, width: 44 },
+  actionText: { fontWeight: '900', fontSize: 13 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.three },
   histPanel: { width: '100%', maxWidth: 640, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
   histHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
