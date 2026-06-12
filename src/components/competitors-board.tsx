@@ -230,7 +230,7 @@ export function CompetitorsBoard() {
                   <Metric label="revenue / mo" value={money(cur?.revenue_estimate ?? null)} strong />
                   <Metric label="downloads / mo" value={compact(cur?.downloads_estimate ?? null)} />
                   <Metric label="rank" value={cur?.rank != null ? `#${cur.rank}` : '—'} />
-                  <Metric label="rating" value={cur?.rating != null ? `★ ${Number(cur.rating).toFixed(2)}` : '—'} />
+                  <Metric label="total reviews" value={compact(cur?.rating_count ?? null)} />
                 </View>
 
                 <MiniSpark series={series} />
