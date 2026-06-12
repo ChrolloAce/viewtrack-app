@@ -271,8 +271,9 @@ export function CompetitorsBoard() {
                     {busy === `r-${app.track_id}` ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="refresh" size={14} color={theme.text} />}
                     <ThemedText style={styles.actionText}> refresh</ThemedText>
                   </Pressable>
-                  <Pressable onPress={() => remove(app)} style={({ pressed }) => [styles.actionBtn, styles.actionIconOnly, { borderColor: theme.border, backgroundColor: theme.danger }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
-                    <Ionicons name="trash" size={20} color="#fff" />
+                  <Pressable onPress={() => remove(app)} style={({ pressed }) => [styles.actionBtn, { borderColor: theme.border, backgroundColor: theme.danger }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+                    <Ionicons name="trash" size={15} color="#fff" />
+                    <ThemedText style={[styles.actionText, { color: '#fff' }]}> remove</ThemedText>
                   </Pressable>
                 </View>
               </BrutalCard>
@@ -465,8 +466,7 @@ const styles = StyleSheet.create({
   sparkBar: { flex: 1, borderRadius: 2 },
   creatorsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: Border.width, borderRadius: Radius.sm, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.two },
   cardActions: { flexDirection: 'row', gap: Spacing.two },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 38, borderRadius: Radius.sm, borderWidth: Border.width },
-  actionIconOnly: { flex: 0, width: 54 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 42, borderRadius: Radius.sm, borderWidth: Border.width },
   actionText: { fontWeight: '900', fontSize: 13 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.three },
   histPanel: { width: '100%', maxWidth: 640, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
