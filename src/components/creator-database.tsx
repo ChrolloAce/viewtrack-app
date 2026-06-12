@@ -138,6 +138,41 @@ export function CreatorDatabase() {
     reload();
   }
 
+  const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
+  const [refreshErrs, setRefreshErrs] = useState<string[]>([]);
+
+  /** Refresh the selected creators' accounts in ViewTrack — per-row spinners,
+   *  errors collected and shown when everything comes back. */
+  async function bulkRefresh() {
+    const ids = [...picked];
+    if (!ids.length || refreshingIds.size) return;
+    setRefreshErrs([]);
+    setRefreshingIds(new Set(ids));
+    const errs: string[] = [];
+    for (const id of ids) {
+      const name = creators.find((c) => c.id === id)?.full_name ?? 'creator';
+      try {
+        const r = await vtRefreshCreator(id);
+        if (r.total === 0) errs.push(`${name}: no linked accounts to refresh`);
+        else if (r.refreshed < r.total) errs.push(`${name}: only ${r.refreshed}/${r.total} accounts refreshed`);
+      } catch (e) {
+        errs.push(`${name}: ${(e as Error).message}`);
+      }
+      setRefreshingIds((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+    }
+    setRefreshErrs(errs);
+    if (errs.length === 0) {
+      setSyncMsg(`✓ refreshed ${ids.length} creator${ids.length === 1 ? '' : 's'} — fresh stats land in a minute or two, then hit Refresh.`);
+      setTimeout(() => setSyncMsg(null), 8000);
+    }
+    setPicked(new Set());
+    reload();
+  }
+
   const [deleting, setDeleting] = useState(false);
   async function bulkDelete() {
     const ids = [...picked];
@@ -273,6 +308,22 @@ export function CreatorDatabase() {
         </View>
       )}
 
+      {refreshErrs.length > 0 && (
+        <View style={[styles.syncBanner, { backgroundColor: '#FEE2E2', borderColor: theme.danger }]}>
+          <Ionicons name="warning" size={15} color={theme.danger} />
+          <View style={{ flex: 1, gap: 2 }}>
+            {refreshErrs.map((e, i) => (
+              <ThemedText key={i} type="small" style={{ color: theme.danger, fontWeight: '700' }}>
+                {e}
+              </ThemedText>
+            ))}
+          </View>
+          <Pressable onPress={() => setRefreshErrs([])} hitSlop={8}>
+            <Ionicons name="close" size={16} color={theme.danger} />
+          </Pressable>
+        </View>
+      )}
+
       {/* summary stats */}
       <View style={styles.statRow}>
         <Stat icon="people" label="Total Creators" value={`${creators.length}`} loading={listLoading} />
@@ -398,10 +449,21 @@ export function CreatorDatabase() {
                         ))}
                     </View>
                     <View style={styles.statusRow}>
-                      <View style={[styles.dot, { backgroundColor: c.disabled ? theme.danger : invite ? '#F59E0B' : theme.success }]} />
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {c.disabled ? 'removed' : invite ? 'invited · not claimed' : 'active'}
-                      </ThemedText>
+                      {refreshingIds.has(c.id) ? (
+                        <>
+                          <ActivityIndicator size="small" color={theme.primary} />
+                          <ThemedText type="small" style={{ color: theme.primary, fontWeight: '700' }}>
+                            refreshing accounts…
+                          </ThemedText>
+                        </>
+                      ) : (
+                        <>
+                          <View style={[styles.dot, { backgroundColor: c.disabled ? theme.danger : invite ? '#F59E0B' : theme.success }]} />
+                          <ThemedText type="small" themeColor="textSecondary">
+                            {c.disabled ? 'removed' : invite ? 'invited · not claimed' : 'active'}
+                          </ThemedText>
+                        </>
+                      )}
                     </View>
                   </View>
                 </View>
@@ -446,6 +508,12 @@ export function CreatorDatabase() {
           <ThemedText style={[styles.selCountText, { color: theme.primaryText }]}>{picked.size}</ThemedText>
         </View>
         <ThemedText style={styles.selBarText}>selected</ThemedText>
+        <Pressable
+          onPress={bulkRefresh}
+          disabled={!!refreshingIds.size}
+          style={({ pressed }) => [styles.selActBtn, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 2), refreshingIds.size > 0 && { opacity: 0.6 }, pressed && styles.pressIn]}>
+          <ThemedText style={styles.selActText}>{refreshingIds.size ? `Refreshing ${refreshingIds.size}…` : 'Refresh'}</ThemedText>
+        </Pressable>
         <Pressable onPress={() => bulkAccess(true)} style={({ pressed }) => [styles.selActBtn, { backgroundColor: theme.danger, borderColor: theme.border }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
           <ThemedText style={styles.selActText}>Remove access</ThemedText>
         </Pressable>
