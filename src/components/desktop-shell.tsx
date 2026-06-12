@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { BrutalAvatar } from '@/components/brutal';
+import { CompetitorsBoard } from '@/components/competitors-board';
 import { CreatorDatabase } from '@/components/creator-database';
 import { RequestsAdmin } from '@/app/(tabs)/requests';
 import { BrutalCard } from '@/components/brutal';
@@ -158,6 +159,11 @@ function ShellBody() {
         {section === 'clicks' && isAdmin && (
           <View style={styles.flex}>
             <LinkClicks />
+          </View>
+        )}
+        {section === 'competitors' && isAdmin && (
+          <View style={styles.flex}>
+            <CompetitorsBoard />
           </View>
         )}
         {section === 'requests' && isAdmin && (
