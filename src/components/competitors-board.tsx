@@ -22,7 +22,7 @@ type CompApp = {
   release_date: string | null;
   created_at: string;
 };
-type Snap = { track_id: number; day: string; rating: number | null; rating_count: number | null; revenue_estimate: number | null; downloads_estimate: number | null; rank: number | null; version: string | null };
+type Snap = { track_id: number; day: string; rating: number | null; rating_count: number | null; revenue_estimate: number | null; downloads_estimate: number | null; rank: number | null; rank_grossing: number | null; version: string | null };
 type SearchHit = { trackId: number; name: string; icon: string | null; developer: string | null; category: string | null; rating: number | null; ratingCount: number | null };
 type Creator = { id: string; full_name: string | null; avatar_url: string | null };
 
@@ -229,7 +229,8 @@ export function CompetitorsBoard() {
                 <View style={styles.metricsGrid}>
                   <Metric label="revenue / mo" value={money(cur?.revenue_estimate ?? null)} strong />
                   <Metric label="downloads / mo" value={compact(cur?.downloads_estimate ?? null)} />
-                  <Metric label="rank" value={cur?.rank != null ? `#${cur.rank}` : '—'} />
+                  <Metric label={`grossing rank · ${app.category ?? 'category'}`} value={cur?.rank_grossing != null ? `#${cur.rank_grossing}` : '—'} />
+                  <Metric label={`free rank · ${app.category ?? 'category'}`} value={cur?.rank != null ? `#${cur.rank}` : '—'} />
                   <Metric label="total reviews" value={compact(cur?.rating_count ?? null)} />
                 </View>
 
@@ -325,12 +326,13 @@ function MiniSpark({ series }: { series: Snap[] }) {
   );
 }
 
-type HistMetric = 'revenue_estimate' | 'downloads_estimate' | 'rank' | 'rating_count';
+type HistMetric = 'revenue_estimate' | 'downloads_estimate' | 'rank' | 'rank_grossing' | 'rating_count';
 const HIST_METRICS: DropdownOption<HistMetric>[] = [
   { value: 'revenue_estimate', label: 'Revenue', icon: 'cash' },
   { value: 'downloads_estimate', label: 'Downloads', icon: 'download' },
-  { value: 'rank', label: 'Rank', icon: 'podium' },
-  { value: 'rating_count', label: 'Rating count', icon: 'star' },
+  { value: 'rank_grossing', label: 'Grossing rank', icon: 'podium' },
+  { value: 'rank', label: 'Free rank', icon: 'podium-outline' },
+  { value: 'rating_count', label: 'Total reviews', icon: 'star' },
 ];
 
 function CompHistoryModal({ app, series, onClose }: { app: CompApp; series: Snap[]; onClose: () => void }) {
@@ -338,7 +340,7 @@ function CompHistoryModal({ app, series, onClose }: { app: CompApp; series: Snap
   const [metric, setMetric] = useState<HistMetric>('revenue_estimate');
   const vals = series.map((s) => Number(s[metric] ?? 0));
   const max = Math.max(...vals, 1);
-  const fmt = (n: number) => (metric === 'revenue_estimate' ? money(n) : metric === 'rank' ? `#${n}` : compact(n));
+  const fmt = (n: number) => (metric === 'revenue_estimate' ? money(n) : metric === 'rank' || metric === 'rank_grossing' ? `#${n}` : compact(n));
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
