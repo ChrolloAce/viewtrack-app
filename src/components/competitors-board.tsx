@@ -271,8 +271,8 @@ export function CompetitorsBoard() {
                     {busy === `r-${app.track_id}` ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="refresh" size={14} color={theme.text} />}
                     <ThemedText style={styles.actionText}> refresh</ThemedText>
                   </Pressable>
-                  <Pressable onPress={() => remove(app)} style={({ pressed }) => [styles.actionBtn, styles.actionIconOnly, { borderColor: theme.border, backgroundColor: theme.card }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
-                    <Ionicons name="trash-outline" size={15} color={theme.danger} />
+                  <Pressable onPress={() => remove(app)} style={({ pressed }) => [styles.actionBtn, styles.actionIconOnly, { borderColor: theme.border, backgroundColor: theme.danger }, brutalShadow(theme.shadow, 2), pressed && styles.pressIn]}>
+                    <Ionicons name="trash" size={20} color="#fff" />
                   </Pressable>
                 </View>
               </BrutalCard>
@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
   hitIcon: { width: 40, height: 40, borderRadius: 9 },
   empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.six, borderRadius: Radius.lg, borderWidth: Border.width, borderStyle: 'dashed' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
-  appCard: { width: 400, gap: Spacing.two + 2 },
+  appCard: { flexGrow: 1, flexBasis: 360, maxWidth: 480, gap: Spacing.two + 2 },
   appHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2 },
   appIcon: { width: 52, height: 52, borderRadius: 12, borderWidth: Border.width },
   appName: { fontSize: 17, lineHeight: 22, fontWeight: '900' },
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
   creatorsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: Border.width, borderRadius: Radius.sm, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.two },
   cardActions: { flexDirection: 'row', gap: Spacing.two },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 38, borderRadius: Radius.sm, borderWidth: Border.width },
-  actionIconOnly: { flex: 0, width: 44 },
+  actionIconOnly: { flex: 0, width: 54 },
   actionText: { fontWeight: '900', fontSize: 13 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.three },
   histPanel: { width: '100%', maxWidth: 640, gap: Spacing.two, borderWidth: Border.widthThick, borderRadius: Radius.lg, padding: Spacing.four },
