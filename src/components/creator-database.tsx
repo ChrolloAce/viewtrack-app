@@ -1272,7 +1272,7 @@ function CreatorDetail({
       {/* stats */}
       <View style={styles.statRow}>
         <Stat icon="people" label="Following" value={compact(totalFollowing)} loading={loadingV} />
-        <Stat icon="eye" label="Views" value={compact(totalViews)} loading={loadingV} />
+        <Stat icon="eye" label="Lifetime views" value={compact(totalViews)} loading={loadingV} />
         <Stat icon="videocam" label="Videos" value={`${totalVideos}`} loading={loadingV} />
         <Stat icon="checkmark-done" label="Briefs done" value={`${view?.briefsDone ?? 0}`} tone={theme.success} loading={loadingV} />
       </View>

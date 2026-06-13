@@ -113,7 +113,7 @@ export function ViewsBreakdown({ accounts, videos, days, profileId }: { accounts
               <Ionicons name={PLATFORM_ICON[p.platform] as never} size={20} color={PLATFORM_COLOR[p.platform] ?? theme.text} />
               <ThemedText style={styles.platViews}>{compact(p.views)}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {p.platform} views
+                {p.platform} views · {allTime ? 'all time' : `last ${windowDays}d`}
               </ThemedText>
             </BrutalCard>
           ))}
