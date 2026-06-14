@@ -65,7 +65,8 @@ export default function OnboardingScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <View style={styles.inner}>
             <ThemedText style={styles.title}>set up your profile</ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
               Add your name and a photo so the team knows who you are.
@@ -109,6 +110,7 @@ export default function OnboardingScreen() {
                 Add a name and photo to continue.
               </ThemedText>
             )}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -125,10 +127,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.four,
-    gap: Spacing.three,
+  },
+  inner: {
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    gap: Spacing.three,
+    alignItems: 'center',
   },
   title: { fontSize: 30, lineHeight: 38, fontWeight: '900', letterSpacing: 0.5, textAlign: 'center' },
   subtitle: { textAlign: 'center', marginTop: -Spacing.two },

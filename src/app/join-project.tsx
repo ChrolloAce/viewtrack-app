@@ -45,7 +45,8 @@ export default function JoinProjectScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <View style={styles.inner}>
             <Image source={require('../../assets/images/app-logo.png')} style={styles.logo} contentFit="contain" />
 
             <ThemedText style={styles.title}>join a project</ThemedText>
@@ -79,6 +80,7 @@ export default function JoinProjectScreen() {
                 </ThemedText>
               </ThemedText>
             </Pressable>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -95,10 +97,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.four,
-    gap: Spacing.three,
+  },
+  inner: {
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    gap: Spacing.three,
+    alignItems: 'center',
   },
   logo: { width: 96, height: 96, marginBottom: Spacing.two },
   title: { fontSize: 32, lineHeight: 40, fontWeight: '900', letterSpacing: 0.5 },

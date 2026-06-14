@@ -54,7 +54,8 @@ export default function TermsScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.inner}>
           <View style={[styles.iconWrap, { backgroundColor: theme.primary, borderColor: theme.border }, brutalShadow(theme.shadow, 5)]}>
             <Ionicons name="shield-checkmark" size={34} color={theme.primaryText} />
           </View>
@@ -122,6 +123,7 @@ export default function TermsScreen() {
               </ThemedText>
             </ThemedText>
           </Pressable>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -131,13 +133,17 @@ export default function TermsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  scroll: { flex: 1 },
   content: {
+    flexGrow: 1,
     padding: Spacing.four,
     paddingBottom: Spacing.six,
-    gap: Spacing.three,
+    alignItems: 'center',
+  },
+  inner: {
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    gap: Spacing.three,
     alignItems: 'stretch',
   },
   iconWrap: { width: 64, height: 64, borderRadius: Radius.lg, borderWidth: Border.widthThick, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginTop: Spacing.two },
