@@ -6,6 +6,7 @@ import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, 
 
 import { BrutalAvatar } from '@/components/brutal';
 import { CompetitorsBoard } from '@/components/competitors-board';
+import { ApiBoard } from '@/components/api-board';
 import { ViralFormatsBoard } from '@/components/viral-formats-board';
 import { CreatorDatabase } from '@/components/creator-database';
 import { RequestsAdmin } from '@/app/(tabs)/requests';
@@ -170,6 +171,11 @@ function ShellBody() {
         {section === 'formats' && isAdmin && (
           <View style={styles.flex}>
             <ViralFormatsBoard />
+          </View>
+        )}
+        {section === 'api' && isAdmin && (
+          <View style={styles.flex}>
+            <ApiBoard />
           </View>
         )}
         {section === 'requests' && isAdmin && (

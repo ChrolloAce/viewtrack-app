@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type Section = 'home' | 'record' | 'chat' | 'creators' | 'videos' | 'clicks' | 'competitors' | 'formats' | 'requests' | 'leaderboard' | 'payouts' | 'reports' | 'profile';
+export type Section = 'home' | 'record' | 'chat' | 'creators' | 'videos' | 'clicks' | 'competitors' | 'formats' | 'api' | 'requests' | 'leaderboard' | 'payouts' | 'reports' | 'profile';
 
 const DIVIDER = 'rgba(0,0,0,0.08)';
 
@@ -39,6 +39,7 @@ export function DesktopRail({
         { key: 'clicks', icon: 'link', label: 'Link Clicks' },
         { key: 'competitors', icon: 'podium', label: 'Competitors' },
         { key: 'formats', icon: 'flame', label: 'Viral Formats' },
+        { key: 'api', icon: 'code-slash', label: 'API' },
         { key: 'payouts', icon: 'cash', label: 'Payouts' },
         { key: 'requests', icon: 'download', label: 'Requests', badge: pending },
         { key: 'reports', icon: 'flag', label: 'Reports' },
