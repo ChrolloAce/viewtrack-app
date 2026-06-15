@@ -111,6 +111,25 @@ export default function SignInScreen() {
                 loading={busy}
                 disabled={!email.trim() || !password}
               />
+
+              {/* legal — reachable before logging in (App Store 1.2) */}
+              <ThemedText type="small" themeColor="textSecondary" style={styles.legal}>
+                By continuing you agree to our{' '}
+                <ThemedText
+                  type="small"
+                  style={styles.legalLink}
+                  onPress={() => (Platform.OS === 'web' ? window.open('https://viewtrack-console.vercel.app/terms', '_blank') : Linking.openURL('https://viewtrack-console.vercel.app/terms'))}>
+                  Terms
+                </ThemedText>{' '}
+                and{' '}
+                <ThemedText
+                  type="small"
+                  style={styles.legalLink}
+                  onPress={() => (Platform.OS === 'web' ? window.open('https://viewtrack-console.vercel.app/privacy', '_blank') : Linking.openURL('https://viewtrack-console.vercel.app/privacy'))}>
+                  Privacy Policy
+                </ThemedText>
+                .
+              </ThemedText>
             </View>
 
             <Link href="/(auth)/sign-up" style={styles.linkWrap}>
@@ -170,6 +189,8 @@ const styles = StyleSheet.create({
   subtitle: { textAlign: 'center' },
   form: { alignSelf: 'stretch', gap: Spacing.three, marginTop: Spacing.two },
   linkWrap: { marginTop: Spacing.two },
+  legal: { textAlign: 'center', lineHeight: 18, marginTop: Spacing.one },
+  legalLink: { color: '#F4731E', fontWeight: '700', textDecorationLine: 'underline' },
   devBox: {
     alignSelf: 'stretch',
     marginTop: Spacing.four,

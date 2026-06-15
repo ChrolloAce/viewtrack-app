@@ -8,8 +8,18 @@ const sb = supabase as unknown as { from: (t: string) => any };
 // NOTE: must .bind — a bare `supabase.rpc` loses its `this` and throws inside supabase-js.
 const rpc = supabase.rpc.bind(supabase) as unknown as (fn: string, args?: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
 
-export async function blockUser(targetId: string) {
-  return rpc('block_user', { p_target: targetId });
+/** Block a user. Passing the offending message context files a report too, so
+ *  the developer is notified of the content (App Store 1.2 requirement). */
+export async function blockUser(
+  targetId: string,
+  ctx?: { messageId?: string | null; conversationId?: string | null; excerpt?: string | null },
+) {
+  return rpc('block_user', {
+    p_target: targetId,
+    p_message: ctx?.messageId ?? null,
+    p_conversation: ctx?.conversationId ?? null,
+    p_excerpt: ctx?.excerpt ?? null,
+  });
 }
 export async function unblockUser(targetId: string) {
   return rpc('unblock_user', { p_target: targetId });

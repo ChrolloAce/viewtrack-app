@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrutalButton, BrutalInput } from '@/components/brutal';
@@ -10,6 +10,16 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+
+const LEGAL_URLS = {
+  terms: 'https://viewtrack-console.vercel.app/terms',
+  privacy: 'https://viewtrack-console.vercel.app/privacy',
+};
+function openLegal(which: 'terms' | 'privacy') {
+  const url = LEGAL_URLS[which];
+  if (Platform.OS === 'web') window.open(url, '_blank');
+  else Linking.openURL(url);
+}
 
 export default function SignUpScreen() {
   const theme = useTheme();
@@ -104,6 +114,19 @@ export default function SignUpScreen() {
                 loading={busy}
                 disabled={!name.trim() || !email.trim() || !password}
               />
+
+              {/* EULA / legal — shown before account creation (App Store 1.2) */}
+              <ThemedText type="small" themeColor="textSecondary" style={styles.legal}>
+                By creating an account you agree to our{' '}
+                <ThemedText type="small" style={styles.legalLink} onPress={() => openLegal('terms')}>
+                  Terms of Service
+                </ThemedText>{' '}
+                and{' '}
+                <ThemedText type="small" style={styles.legalLink} onPress={() => openLegal('privacy')}>
+                  Privacy Policy
+                </ThemedText>
+                .
+              </ThemedText>
             </View>
 
             <Link href="/(auth)/sign-in" style={styles.linkWrap}>
@@ -143,4 +166,6 @@ const styles = StyleSheet.create({
   subtitle: { textAlign: 'center' },
   form: { alignSelf: 'stretch', gap: Spacing.three, marginTop: Spacing.two },
   linkWrap: { marginTop: Spacing.two },
+  legal: { textAlign: 'center', lineHeight: 18, marginTop: Spacing.one },
+  legalLink: { color: '#F4731E', fontWeight: '700', textDecorationLine: 'underline' },
 });

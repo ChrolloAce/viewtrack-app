@@ -827,9 +827,9 @@ export function ChatThread({
                         <Pressable
                           onPress={() => {
                             impact('medium');
-                            blockUser(fm.sender_id);
+                            blockUser(fm.sender_id, { messageId: fm.id, conversationId, excerpt: fm.body ?? fm.attachment_type ?? '' });
                             setActionMsg(null);
-                            setToast(`Blocked ${senders[fm.sender_id]?.full_name ?? 'user'} — you won't see their messages.`);
+                            setToast(`Blocked ${senders[fm.sender_id]?.full_name ?? 'user'} — they're hidden and reported to our team.`);
                           }}
                           style={({ pressed }) => [styles.menuItem, { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && { backgroundColor: theme.backgroundElement }]}>
                           <ThemedText style={[styles.menuLabel, { color: theme.danger }]}>Block</ThemedText>
