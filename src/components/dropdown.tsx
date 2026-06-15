@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
 import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -6,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type DropdownOption<T extends string> = { value: T; label: string; icon?: string };
+export type DropdownOption<T extends string> = { value: T; label: string; icon?: string; image?: string };
 
 /** A compact, anchored dropdown — trigger shows the current choice; the menu
  *  opens directly beneath it. Works on web + native via measureInWindow. */
@@ -45,7 +46,11 @@ export function Dropdown<T extends string>({
           brutalShadow(theme.shadow, 3),
           pressed && { transform: [{ translateX: 1 }, { translateY: 1 }] },
         ]}>
-        {current?.icon && <Ionicons name={current.icon as never} size={15} color={theme.primary} />}
+        {current?.image ? (
+          <Image source={{ uri: current.image }} style={styles.optImage} contentFit="cover" />
+        ) : (
+          current?.icon && <Ionicons name={current.icon as never} size={15} color={theme.primary} />
+        )}
         <ThemedText style={[styles.triggerText, { color: theme.text }]} numberOfLines={1}>
           {current?.label}
         </ThemedText>
@@ -78,7 +83,11 @@ export function Dropdown<T extends string>({
                           setOpen(false);
                         }}
                         style={({ pressed }) => [styles.item, on && { backgroundColor: theme.primaryMuted }, pressed && { backgroundColor: theme.backgroundElement }]}>
-                        {o.icon && <Ionicons name={o.icon as never} size={15} color={on ? theme.primary : theme.textSecondary} />}
+                        {o.image ? (
+                          <Image source={{ uri: o.image }} style={styles.optImage} contentFit="cover" />
+                        ) : (
+                          o.icon && <Ionicons name={o.icon as never} size={15} color={on ? theme.primary : theme.textSecondary} />
+                        )}
                         <ThemedText style={[styles.itemText, { color: on ? theme.primary : theme.text }]} numberOfLines={1}>
                           {o.label}
                         </ThemedText>
@@ -111,4 +120,5 @@ const styles = StyleSheet.create({
   menu: { position: 'absolute', borderRadius: Radius.md, borderWidth: Border.width, paddingVertical: 5, overflow: 'hidden' },
   item: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: 10 },
   itemText: { flex: 1, fontSize: 14, fontWeight: '700' },
+  optImage: { width: 20, height: 20, borderRadius: 5 },
 });

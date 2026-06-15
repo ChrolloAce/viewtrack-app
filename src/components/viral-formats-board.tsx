@@ -81,9 +81,18 @@ export function ViralFormatsBoard() {
   }, [reload]);
 
   const appOpts = useMemo<DropdownOption<string>[]>(() => {
-    const m = new Map<string, number>();
-    rows.forEach((r) => r.app_name && m.set(r.app_name, (m.get(r.app_name) ?? 0) + 1));
-    return [{ value: 'all', label: 'All apps', icon: 'apps-outline' }, ...[...m.entries()].sort((a, b) => b[1] - a[1]).map(([n, c]) => ({ value: n, label: `${n} (${c})`, icon: 'phone-portrait-outline' as const }))];
+    const m = new Map<string, { count: number; icon: string | null }>();
+    rows.forEach((r) => {
+      if (!r.app_name) return;
+      const e = m.get(r.app_name) ?? { count: 0, icon: null };
+      e.count += 1;
+      if (!e.icon && r.app_icon) e.icon = r.app_icon;
+      m.set(r.app_name, e);
+    });
+    return [
+      { value: 'all', label: 'All apps', icon: 'apps-outline' },
+      ...[...m.entries()].sort((a, b) => b[1].count - a[1].count).map(([n, e]) => ({ value: n, label: `${n} (${e.count})`, image: e.icon ?? undefined, icon: 'phone-portrait-outline' as const })),
+    ];
   }, [rows]);
 
   const formatOpts = useMemo<DropdownOption<string>[]>(() => {
