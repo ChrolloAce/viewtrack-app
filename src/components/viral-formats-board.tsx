@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Dropdown, type DropdownOption } from '@/components/dropdown';
 import { ThemedText } from '@/components/themed-text';
@@ -19,6 +19,7 @@ type Format = {
   title: string | null;
   caption: string | null;
   cover: string | null;
+  video_url: string | null;
   views: number;
   likes: number;
   comments: number;
@@ -60,6 +61,7 @@ export function ViralFormatsBoard() {
   const [formatFilter, setFormatFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [limit, setLimit] = useState(PAGE);
+  const [playing, setPlaying] = useState<Format | null>(null);
 
   const reload = useCallback(async () => {
     const { data } = await sb.from('viral_formats').select('*').order('views', { ascending: false }).limit(5000);
@@ -148,8 +150,15 @@ export function ViralFormatsBoard() {
           <View style={styles.grid}>
             {shown.slice(0, limit).map((f) => (
               <View key={f.external_id} style={[styles.card, { backgroundColor: theme.card, borderColor: HAIR }, soft]}>
-                <Pressable onPress={() => f.url && openUrl(f.url)} style={styles.coverWrap}>
+                <Pressable onPress={() => (f.video_url ? setPlaying(f) : f.url && openUrl(f.url))} style={styles.coverWrap}>
                   {f.cover ? <Image source={{ uri: f.cover }} style={styles.cover} contentFit="cover" /> : <View style={[styles.cover, { backgroundColor: theme.backgroundElement }]} />}
+                  {!!f.video_url && (
+                    <View style={styles.playOverlay}>
+                      <View style={styles.playCircle}>
+                        <Ionicons name="play" size={22} color="#fff" style={{ marginLeft: 3 }} />
+                      </View>
+                    </View>
+                  )}
                   <View style={styles.platBadge}>
                     <Ionicons name={PLATFORM_ICON[f.platform ?? ''] as never} size={12} color={PLATFORM_COLOR[f.platform ?? ''] ?? theme.text} />
                   </View>
@@ -206,7 +215,99 @@ export function ViralFormatsBoard() {
           )}
         </>
       )}
+
+      {playing && <PlayerModal format={playing} onClose={() => setPlaying(null)} />}
     </ScrollView>
+  );
+}
+
+/** Inline video player — plays the LightReel-hosted mp4 with the format's context. */
+function PlayerModal({ format: f, onClose }: { format: Format; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.playerBackdrop} onPress={onClose}>
+        <Pressable style={[styles.playerPanel, { backgroundColor: theme.card }]} onPress={() => {}}>
+          <View style={styles.playerVideo}>
+            {Platform.OS === 'web' && f.video_url
+              ? createElement('video', {
+                  src: f.video_url,
+                  poster: f.cover ?? undefined,
+                  controls: true,
+                  autoPlay: true,
+                  loop: true,
+                  playsInline: true,
+                  style: { width: '100%', height: '100%', objectFit: 'contain', background: '#000', borderRadius: 14 },
+                })
+              : f.cover && <Image source={{ uri: f.cover }} style={{ width: '100%', height: '100%', borderRadius: 14 }} contentFit="contain" />}
+          </View>
+
+          <View style={styles.playerSide}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <ThemedText style={{ fontWeight: '900', fontSize: 16 }} numberOfLines={1}>
+                @{f.creator_handle}
+              </ThemedText>
+              <Pressable onPress={onClose} hitSlop={8}>
+                <Ionicons name="close" size={22} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <View style={styles.tagRow}>
+              {!!f.format && (
+                <View style={[styles.fmtChip, { backgroundColor: 'rgba(244,115,30,0.12)' }]}>
+                  <ThemedText style={[styles.fmtChipText, { color: theme.primary }]}>{f.format}</ThemedText>
+                </View>
+              )}
+              {(f.style_tags ?? []).map((t) => (
+                <View key={t} style={[styles.styleChip, { backgroundColor: theme.backgroundElement }]}>
+                  <ThemedText style={styles.styleChipText}>{t}</ThemedText>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.statsRow}>
+              <Stat icon="eye" label="views" value={compact(f.views)} />
+              <Stat icon="heart" label="likes" value={compact(f.likes)} />
+              {f.breakout_ratio != null && <Stat icon="trending-up" label="breakout" value={`${f.breakout_ratio.toFixed(1)}x`} />}
+            </View>
+
+            <ThemedText type="small" themeColor="textSecondary" style={{ lineHeight: 19 }}>
+              {f.caption || f.title}
+            </ThemedText>
+
+            {!!f.app_name && (
+              <Pressable onPress={() => f.app_track_id && openUrl(appStoreUrl(f.app_track_id))} style={[styles.appRow, { borderColor: HAIR, backgroundColor: theme.background }]}>
+                {f.app_icon ? <Image source={{ uri: f.app_icon }} style={styles.appIcon} contentFit="cover" /> : <View style={[styles.appIcon, { backgroundColor: theme.backgroundElement }]} />}
+                <ThemedText style={styles.appName} numberOfLines={1}>
+                  {f.app_name}
+                </ThemedText>
+                <Ionicons name="open-outline" size={13} color={theme.textSecondary} />
+              </Pressable>
+            )}
+
+            <Pressable onPress={() => f.url && openUrl(f.url)} style={[styles.origBtn, { borderColor: HAIR }]}>
+              <Ionicons name="open-outline" size={14} color={theme.text} />
+              <ThemedText style={{ fontWeight: '700', fontSize: 13 }}> open original on {f.platform}</ThemedText>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: string; label: string; value: string }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Ionicons name={icon as never} size={13} color={theme.primary} />
+        <ThemedText style={{ fontWeight: '900', fontSize: 15 }}>{value}</ThemedText>
+      </View>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -222,6 +323,8 @@ const styles = StyleSheet.create({
   card: { width: 232, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   coverWrap: { width: '100%', height: 300 },
   cover: { width: '100%', height: '100%' },
+  playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  playCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   platBadge: { position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
   breakoutBadge: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#16A34A', paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full },
   breakoutText: { color: '#fff', fontSize: 10, fontWeight: '800' },
@@ -238,4 +341,10 @@ const styles = StyleSheet.create({
   appIcon: { width: 26, height: 26, borderRadius: 6 },
   appName: { fontWeight: '700', fontSize: 13, flex: 1 },
   loadMore: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'center', marginTop: Spacing.four, paddingHorizontal: Spacing.five, height: 44, borderRadius: Radius.full, borderWidth: 1 },
+  playerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: Spacing.three },
+  playerPanel: { flexDirection: 'row', gap: Spacing.three, maxWidth: 720, width: '100%', maxHeight: '90%', borderRadius: 18, padding: Spacing.three, ...soft },
+  playerVideo: { width: 300, aspectRatio: 9 / 16, maxHeight: '100%', borderRadius: 14, overflow: 'hidden', backgroundColor: '#000' },
+  playerSide: { flex: 1, gap: Spacing.two, minWidth: 0, paddingVertical: Spacing.one },
+  statsRow: { flexDirection: 'row', gap: Spacing.two },
+  origBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 40, borderRadius: Radius.md, borderWidth: 1, marginTop: 'auto' },
 });
