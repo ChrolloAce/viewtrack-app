@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Border, brutalShadow, Radius, Spacing } from '@/constants/theme';
@@ -54,31 +54,42 @@ export function Dropdown<T extends string>({
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <View
-            style={[
-              styles.menu,
-              { backgroundColor: theme.card, borderColor: theme.border, top: anchor.y + anchor.h + 6, left: anchor.x, minWidth: Math.max(minWidth, anchor.w) },
-              brutalShadow(theme.shadow, 4),
-            ]}>
-            {options.map((o) => {
-              const on = o.value === value;
-              return (
-                <Pressable
-                  key={o.value}
-                  onPress={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
-                  style={({ pressed }) => [styles.item, on && { backgroundColor: theme.primaryMuted }, pressed && { backgroundColor: theme.backgroundElement }]}>
-                  {o.icon && <Ionicons name={o.icon as never} size={15} color={on ? theme.primary : theme.textSecondary} />}
-                  <ThemedText style={[styles.itemText, { color: on ? theme.primary : theme.text }]} numberOfLines={1}>
-                    {o.label}
-                  </ThemedText>
-                  {on && <Ionicons name="checkmark" size={16} color={theme.primary} />}
-                </Pressable>
-              );
-            })}
-          </View>
+          {(() => {
+            // keep the menu on-screen: cap its height to the space below the
+            // trigger and never let it run off the bottom edge.
+            const screenH = Dimensions.get('window').height;
+            const below = screenH - (anchor.y + anchor.h) - 16;
+            const maxH = Math.max(180, Math.min(360, below));
+            return (
+              <View
+                style={[
+                  styles.menu,
+                  { backgroundColor: theme.card, borderColor: theme.border, top: anchor.y + anchor.h + 6, left: anchor.x, minWidth: Math.max(minWidth, anchor.w), maxHeight: maxH },
+                  brutalShadow(theme.shadow, 4),
+                ]}>
+                <ScrollView showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  {options.map((o) => {
+                    const on = o.value === value;
+                    return (
+                      <Pressable
+                        key={o.value}
+                        onPress={() => {
+                          onChange(o.value);
+                          setOpen(false);
+                        }}
+                        style={({ pressed }) => [styles.item, on && { backgroundColor: theme.primaryMuted }, pressed && { backgroundColor: theme.backgroundElement }]}>
+                        {o.icon && <Ionicons name={o.icon as never} size={15} color={on ? theme.primary : theme.textSecondary} />}
+                        <ThemedText style={[styles.itemText, { color: on ? theme.primary : theme.text }]} numberOfLines={1}>
+                          {o.label}
+                        </ThemedText>
+                        {on && <Ionicons name="checkmark" size={16} color={theme.primary} />}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            );
+          })()}
         </Pressable>
       </Modal>
     </>
